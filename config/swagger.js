@@ -11,19 +11,25 @@ const options = {
     },
     servers: [
       {
-        url: "http://localhost:3000",
-        description: "Local development server",
+        url: "https://expense-tracker-ip37.onrender.com",
+        description: "Expense Tracker API production server",
       },
     ],
     tags: [
       { name: "Auth", description: "Authentication APIs" },
       { name: "Onboarding", description: "Onboarding APIs" },
       { name: "Users", description: "Current user profile and preferences" },
-      { name: "Wallets", description: "User wallets (requires completed onboarding)" },
+      {
+        name: "Wallets",
+        description: "User wallets (requires completed onboarding)",
+      },
       { name: "Categories", description: "Transaction categories" },
       { name: "Transactions", description: "Income and expense entries" },
       { name: "Transfers", description: "Wallet-to-wallet transfers" },
-      { name: "Reports", description: "CSV/PDF reports uploaded to Google Drive" },
+      {
+        name: "Reports",
+        description: "CSV/PDF reports uploaded to Google Drive",
+      },
       {
         name: "Subscriptions",
         description: "User subscription and effective plan",
@@ -142,7 +148,8 @@ const options = {
             },
             removeProfileImage: {
               type: "boolean",
-              description: "Set true to clear profileImage (multipart form field)",
+              description:
+                "Set true to clear profileImage (multipart form field)",
             },
           },
         },
@@ -157,7 +164,8 @@ const options = {
             profileImage: {
               type: "string",
               format: "binary",
-              description: "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
+              description:
+                "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
             },
             removeProfileImage: {
               type: "string",
@@ -199,13 +207,7 @@ const options = {
         },
         CreateTransactionRequest: {
           type: "object",
-          required: [
-            "walletId",
-            "categoryId",
-            "type",
-            "amount",
-            "title",
-          ],
+          required: ["walletId", "categoryId", "type", "amount", "title"],
           properties: {
             walletId: { type: "string" },
             categoryId: { type: "string" },
@@ -448,7 +450,9 @@ const options = {
             },
           },
           responses: {
-            200: { description: "Profile updated; profileImage is Google Drive URL" },
+            200: {
+              description: "Profile updated; profileImage is Google Drive URL",
+            },
             400: { description: "Validation failed or invalid image" },
             401: { description: "Unauthorized" },
             503: { description: "Google Drive not configured" },
@@ -465,7 +469,9 @@ const options = {
             required: true,
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/SetDefaultWalletRequest" },
+                schema: {
+                  $ref: "#/components/schemas/SetDefaultWalletRequest",
+                },
               },
             },
           },
@@ -906,7 +912,8 @@ const options = {
       },
     },
   },
-  apis: [],
+
+  apis: ["../routes/*.js"],
 };
 
 const swaggerSpec = swaggerJsdoc(options);
