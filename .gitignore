@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+
+# environment variables
+.env
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# build output
+dist/
+build/
+
+# coverage
+coverage/
+
+# temporary files
+tmp/
+temp/
+
+# cache
+.cache/
+
+# OS files
+.DS_Store
+
+# editor files
+.vscode/
+.idea/
+
+# uploads
+uploads/
+
+# generated files
+*.tgz
+
+# process files
+pids/
+*.pid
+*.pid.lock
