@@ -26,6 +26,7 @@ const options = {
       { name: "Categories", description: "Transaction categories" },
       { name: "Transactions", description: "Income and expense entries" },
       { name: "Transfers", description: "Wallet-to-wallet transfers" },
+      { name: "Voice", description: "AI-assisted voice transaction drafts" },
       {
         name: "Reports",
         description: "CSV/PDF reports uploaded to Google Drive",
@@ -232,6 +233,28 @@ const options = {
             title: { type: "string", example: "Move to savings" },
             description: { type: "string", nullable: true },
             transferDate: { type: "string", format: "date-time" },
+          },
+        },
+        CreateVoiceTransactionDraftRequest: {
+          type: "object",
+          required: ["transcript"],
+          properties: {
+            transcript: {
+              type: "string",
+              example: "I spent 40 dollars for food last Monday",
+            },
+            referenceDate: {
+              type: "string",
+              format: "date-time",
+              description:
+                "Frontend capture time used to resolve relative spoken dates. Defaults to backend now.",
+            },
+            timezone: {
+              type: "string",
+              example: "Asia/Kolkata",
+              description:
+                "Timezone for relative spoken dates when the frontend knows it.",
+            },
           },
         },
         CreateReportRequest: {
@@ -798,6 +821,36 @@ const options = {
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             404: { description: "Wallet not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/voice/transaction-draft": {
+        post: {
+          tags: ["Voice"],
+          summary:
+            "Generate an AI transaction or transfer draft from transcript text",
+          description:
+            "Returns a confirmation draft only. The frontend should let the user confirm or edit it, then call the existing transaction or transfer create API.",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/CreateVoiceTransactionDraftRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Voice draft generated" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            503: {
+              description: "Local or self-hosted voice model unavailable",
+            },
             500: { description: "Server error" },
           },
         },

@@ -2,6 +2,7 @@ require("dotenv").config();
 const path = require("path");
 const express = require("express");
 const swaggerUi = require("swagger-ui-express");
+// const seedDatabase = require("./seed");
 const connectDB = require("./config/database");
 const swaggerSpec = require("./config/swagger");
 const authRoutes = require("./routes/authRoutes");
@@ -10,6 +11,7 @@ const walletRoutes = require("./routes/walletRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const transactionRoutes = require("./routes/transactionRoutes");
 const transferRoutes = require("./routes/transferRoutes");
+const voiceRoutes = require("./routes/voiceRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 
@@ -26,18 +28,10 @@ app.use("/api/wallets", walletRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/transfers", transferRoutes);
+app.use("/api/voice", voiceRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
-app.use(
-  "/api/docs",
-  swaggerUi.serve,
-  swaggerUi.setup(swaggerSpec, {
-    explorer: true,
-    swaggerOptions: {
-      docExpansion: "none",
-    },
-  }),
-);
+app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get("/api/docs.json", (req, res) => {
   res.setHeader("Content-Type", "application/json");
   res.send(swaggerSpec);
