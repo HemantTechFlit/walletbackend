@@ -126,12 +126,37 @@ const options = {
           properties: {
             selectedWallets: {
               type: "array",
-              items: { type: "string", example: "6820752aebf84d7a6394c164" },
+              description: "Mongo _id values or onboarding ids like doordash",
+              items: { type: "string", example: "doordash" },
             },
             selectedCategories: {
               type: "array",
-              items: { type: "string", example: "6820752aebf84d7a6394c16a" },
+              description: "Mongo _id values or onboarding ids like fuel",
+              items: { type: "string", example: "fuel" },
             },
+          },
+        },
+        OnboardingWalletOption: {
+          type: "object",
+          properties: {
+            _id: { type: "string", example: "6820752aebf84d7a6394c164" },
+            id: { type: "string", example: "doordash" },
+            name: { type: "string", example: "DoorDash Wallet" },
+            description: { type: "string", example: "" },
+            icon: { type: "string", example: "CustomIcons.doordash" },
+            color: { type: "string", example: "0xfff72e08" },
+            currency: { type: "string", example: "USD" },
+          },
+        },
+        OnboardingCategoryOption: {
+          type: "object",
+          properties: {
+            _id: { type: "string", example: "6820752aebf84d7a6394c16a" },
+            id: { type: "string", example: "fuel" },
+            name: { type: "string", example: "Fuel" },
+            description: { type: "string", example: "" },
+            icon: { type: "string", example: "CustomIcons.catFuel" },
+            color: { type: "string", example: "0xff4549ff" },
           },
         },
         UpdateUserRequest: {
@@ -412,7 +437,40 @@ const options = {
           summary: "Get onboarding wallet/category options",
           security: [{ bearerAuth: [] }],
           responses: {
-            200: { description: "Options fetched" },
+            200: {
+              description: "Options fetched",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean", example: true },
+                      message: {
+                        type: "string",
+                        example: "Onboarding options fetched successfully",
+                      },
+                      data: {
+                        type: "object",
+                        properties: {
+                          wallets: {
+                            type: "array",
+                            items: {
+                              $ref: "#/components/schemas/OnboardingWalletOption",
+                            },
+                          },
+                          categories: {
+                            type: "array",
+                            items: {
+                              $ref: "#/components/schemas/OnboardingCategoryOption",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
             401: { description: "Unauthorized" },
             500: { description: "Server error" },
           },

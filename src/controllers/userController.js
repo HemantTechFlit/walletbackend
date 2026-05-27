@@ -11,12 +11,14 @@ const { uploadProfileImageToDrive } = require("../utils/googleDrive");
 const syncUserSelectionsFromDb = async (userId) => {
   const [wallets, categories] = await Promise.all([
     Wallet.find({ userId, isDeleted: false })
-      .select("walletName createdAt")
-      .sort({ createdAt: -1 })
+      .select(
+        "walletName slug description icon color currency sortOrder createdAt",
+      )
+      .sort({ sortOrder: 1, createdAt: -1 })
       .lean(),
     TransactionCategory.find({ userId, isDeleted: false })
-      .select("name createdAt")
-      .sort({ createdAt: -1 })
+      .select("name slug description icon color sortOrder createdAt")
+      .sort({ sortOrder: 1, createdAt: -1 })
       .lean(),
   ]);
 
@@ -36,7 +38,10 @@ const getMe = async (req, res) => {
     const userId = req.user.userId;
 
     const user = await User.findById(userId)
-      .populate("defaultWalletId", "walletName")
+      .populate(
+        "defaultWalletId",
+        "walletName slug description icon color currency sortOrder",
+      )
       .populate("subscriptionId");
 
     if (!user || user.isDeleted) {

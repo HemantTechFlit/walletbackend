@@ -23,6 +23,43 @@ const walletSchema = new mongoose.Schema(
       maxlength: 50,
     },
 
+    slug: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      index: true,
+    },
+
+    description: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    icon: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    color: {
+      type: String,
+      default: "0xff000000",
+      trim: true,
+    },
+
+    currency: {
+      type: String,
+      default: "USD",
+      uppercase: true,
+      trim: true,
+    },
+
+    sortOrder: {
+      type: Number,
+      default: 0,
+    },
+
     ...baseSchema,
   },
   {
@@ -31,5 +68,6 @@ const walletSchema = new mongoose.Schema(
 );
 
 walletSchema.index({ userId: 1, createdAt: -1 });
+walletSchema.index({ isDefault: 1, slug: 1 });
 
 module.exports = mongoose.model("Wallet", walletSchema);

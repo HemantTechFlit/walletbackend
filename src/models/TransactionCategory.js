@@ -16,6 +16,36 @@ const transactionCategorySchema = new mongoose.Schema(
       trim: true,
     },
 
+    slug: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      index: true,
+    },
+
+    description: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    icon: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    color: {
+      type: String,
+      default: "0xff8a8f98",
+      trim: true,
+    },
+
+    sortOrder: {
+      type: Number,
+      default: 0,
+    },
+
     isDefault: {
       type: Boolean,
       default: false,
@@ -27,6 +57,8 @@ const transactionCategorySchema = new mongoose.Schema(
     versionKey: false,
   },
 );
+
+transactionCategorySchema.index({ isDefault: 1, slug: 1 });
 
 module.exports = mongoose.model(
   "TransactionCategory",

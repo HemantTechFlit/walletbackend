@@ -20,68 +20,257 @@ const Wallet = require("../models/Wallet");
 const TransactionCategory = require("../models/TransactionCategory");
 
 const DEFAULT_ONBOARDING_WALLETS = [
-  "Uber Wallet",
-  "Rydo Wallet",
-  "Uber Eats Wallet",
-  "Door Dash Wallet",
+  {
+    slug: "uber",
+    walletName: "Uber Wallet",
+    description: "",
+    icon: "CustomIcons.uber",
+    color: "0xff000000",
+    currency: "USD",
+    sortOrder: 1,
+    aliases: ["Uber Wallet"],
+  },
+  {
+    slug: "rydo",
+    walletName: "Rydo Wallet",
+    description: "",
+    icon: "CustomIcons.rydo",
+    color: "0xffff9518",
+    currency: "USD",
+    sortOrder: 2,
+    aliases: ["Rydo Wallet"],
+  },
+  {
+    slug: "ubereats",
+    walletName: "Uber Eats Wallet",
+    description: "",
+    icon: "CustomIcons.ubereats",
+    color: "0xff06c167",
+    currency: "USD",
+    sortOrder: 3,
+    aliases: ["Uber Eats Wallet"],
+  },
+  {
+    slug: "doordash",
+    walletName: "DoorDash Wallet",
+    description: "",
+    icon: "CustomIcons.doordash",
+    color: "0xfff72e08",
+    currency: "USD",
+    sortOrder: 4,
+    aliases: ["DoorDash Wallet", "Door Dash Wallet"],
+  },
 ];
 
 const DEFAULT_ONBOARDING_CATEGORIES = [
-  "Fuel",
-  "Maintenance",
-  "Repair",
-  "Service",
-  "Income",
-  "Salary",
+  {
+    slug: "fuel",
+    name: "Fuel",
+    description: "",
+    icon: "CustomIcons.catFuel",
+    color: "0xff4549ff",
+    sortOrder: 1,
+    aliases: ["Fuel"],
+  },
+  {
+    slug: "service",
+    name: "Service",
+    description: "",
+    icon: "CustomIcons.catService",
+    color: "0xfff77b00",
+    sortOrder: 2,
+    aliases: ["Service"],
+  },
+  {
+    slug: "maintenance",
+    name: "Maintenance",
+    description: "",
+    icon: "CustomIcons.catMaintenance",
+    color: "0xfff72e08",
+    sortOrder: 3,
+    aliases: ["Maintenance"],
+  },
+  {
+    slug: "repair",
+    name: "Repair",
+    description: "",
+    icon: "CustomIcons.catRepair",
+    color: "0xff48FFC3",
+    sortOrder: 4,
+    aliases: ["Repair"],
+  },
+  {
+    slug: "salary",
+    name: "Salary (Cash out)",
+    description: "",
+    icon: "CustomIcons.catPayout",
+    color: "0xff5cb109",
+    sortOrder: 5,
+    aliases: ["Salary (Cash out)", "Salary"],
+  },
+  {
+    slug: "loan",
+    name: "Loan",
+    description: "",
+    icon: "CustomIcons.catLoan",
+    color: "0xffFFA800",
+    sortOrder: 6,
+    aliases: ["Loan"],
+  },
+  {
+    slug: "borrowed",
+    name: "Borrowed",
+    description: "",
+    icon: "CustomIcons.catBorrow",
+    color: "0xff0095FF",
+    sortOrder: 7,
+    aliases: ["Borrowed"],
+  },
 ];
 
+const stripAliases = ({ aliases, ...item }) => item;
+
 const seedOnboardingTemplatesIfMissing = async () => {
-  const [existingWalletTemplates, existingCategoryTemplates] = await Promise.all([
-    Wallet.find({
-      isDefault: true,
-      isDeleted: false,
-    })
-      .select("walletName")
-      .lean(),
-    TransactionCategory.find({
-      isDefault: true,
-      isDeleted: false,
-    })
-      .select("name")
-      .lean(),
+  await Promise.all(
+    DEFAULT_ONBOARDING_WALLETS.map(async (wallet) => {
+      const existingWallet = await Wallet.findOne({
+        isDefault: true,
+        isDeleted: false,
+        $or: [
+          { slug: wallet.slug },
+          { walletName: { $in: wallet.aliases } },
+        ],
+      });
+
+      const walletData = {
+        ...stripAliases(wallet),
+        userId: null,
+        isDefault: true,
+      };
+
+      if (existingWallet) {
+        await Wallet.updateOne(
+          { _id: existingWallet._id },
+          { $set: { ...walletData, updatedAt: new Date() } },
+        );
+        return;
+      }
+
+      await Wallet.create(walletData);
+    }),
+  );
+
+  await Promise.all(
+    DEFAULT_ONBOARDING_CATEGORIES.map(async (category) => {
+      const existingCategory = await TransactionCategory.findOne({
+        isDefault: true,
+        isDeleted: false,
+        $or: [
+          { slug: category.slug },
+          { name: { $in: category.aliases } },
+        ],
+      });
+
+      const categoryData = {
+        ...stripAliases(category),
+        userId: null,
+        isDefault: true,
+      };
+
+      if (existingCategory) {
+        await TransactionCategory.updateOne(
+          { _id: existingCategory._id },
+          { $set: { ...categoryData, updatedAt: new Date() } },
+        );
+        return;
+      }
+
+      await TransactionCategory.create(categoryData);
+    }),
+  );
+
+  await Promise.all([
+    Wallet.updateMany(
+      {
+        isDefault: true,
+        userId: null,
+        slug: { $nin: DEFAULT_ONBOARDING_WALLETS.map((wallet) => wallet.slug) },
+      },
+      { $set: { isDeleted: true, updatedAt: new Date() } },
+    ),
+    TransactionCategory.updateMany(
+      {
+        isDefault: true,
+        userId: null,
+        slug: {
+          $nin: DEFAULT_ONBOARDING_CATEGORIES.map((category) => category.slug),
+        },
+      },
+      { $set: { isDeleted: true, updatedAt: new Date() } },
+    ),
   ]);
-
-  const existingWalletNames = new Set(
-    existingWalletTemplates.map((wallet) => wallet.walletName),
-  );
-  const existingCategoryNames = new Set(
-    existingCategoryTemplates.map((category) => category.name),
-  );
-
-  const walletsToInsert = DEFAULT_ONBOARDING_WALLETS.filter(
-    (walletName) => !existingWalletNames.has(walletName),
-  ).map((walletName) => ({
-    userId: null,
-    isDefault: true,
-    walletName,
-  }));
-
-  const categoriesToInsert = DEFAULT_ONBOARDING_CATEGORIES.filter(
-    (name) => !existingCategoryNames.has(name),
-  ).map((name) => ({
-    userId: null,
-    isDefault: true,
-    name,
-  }));
-
-  if (walletsToInsert.length > 0) {
-    await Wallet.insertMany(walletsToInsert);
-  }
-
-  if (categoriesToInsert.length > 0) {
-    await TransactionCategory.insertMany(categoriesToInsert);
-  }
 };
+
+const normalizeOnboardingSelections = (items) => {
+  return items.reduce(
+    (acc, item) => {
+      const rawValue =
+        typeof item === "object" && item !== null ? item._id || item.id : item;
+
+      if (!rawValue) {
+        return acc;
+      }
+
+      const value = String(rawValue).trim();
+
+      if (mongoose.isValidObjectId(value)) {
+        acc.objectIds.push(value);
+      } else {
+        acc.slugs.push(value.toLowerCase());
+      }
+
+      return acc;
+    },
+    { objectIds: [], slugs: [] },
+  );
+};
+
+const buildTemplateSelectionQuery = ({ objectIds, slugs }) => {
+  const filters = [];
+
+  if (objectIds.length > 0) {
+    filters.push({ _id: { $in: objectIds } });
+  }
+
+  if (slugs.length > 0) {
+    filters.push({ slug: { $in: slugs } });
+  }
+
+  return {
+    isDefault: true,
+    isDeleted: false,
+    ...(filters.length > 0 ? { $or: filters } : { _id: { $in: [] } }),
+  };
+};
+
+const formatWalletOption = (wallet) => ({
+  _id: wallet._id,
+  id: wallet.slug,
+  name: wallet.walletName,
+  description: wallet.description || "",
+  icon: wallet.icon || wallet.slug,
+  color: wallet.color,
+  currency: wallet.currency || "USD",
+});
+
+const formatCategoryOption = (category) => ({
+  _id: category._id,
+  id: category.slug,
+  name: category.name,
+  description: category.description || "",
+  icon: category.icon || category.slug,
+  color: category.color,
+});
 /*
 |--------------------------------------------------------------------------
 | SIGNUP API
@@ -270,7 +459,7 @@ const login = async (req, res) => {
     }).select("+passwordHash");
 
     if (!user) {
-      return errorResponse(res, "Invalid credentials", 400);
+      return errorResponse(res, "Email not registered", 400);
     }
 
     /*
@@ -392,15 +581,10 @@ const completeOnboarding = async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    const walletTemplates = await Wallet.find({
-      _id: {
-        $in: selectedWallets,
-      },
-
-      isDefault: true,
-
-      isDeleted: false,
-    }).session(session);
+    const selectedWalletFilters = normalizeOnboardingSelections(selectedWallets);
+    const walletTemplates = await Wallet.find(
+      buildTemplateSelectionQuery(selectedWalletFilters),
+    ).session(session);
 
     /*
     |--------------------------------------------------------------------------
@@ -408,15 +592,11 @@ const completeOnboarding = async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    const categoryTemplates = await TransactionCategory.find({
-      _id: {
-        $in: selectedCategories,
-      },
-
-      isDefault: true,
-
-      isDeleted: false,
-    }).session(session);
+    const selectedCategoryFilters =
+      normalizeOnboardingSelections(selectedCategories);
+    const categoryTemplates = await TransactionCategory.find(
+      buildTemplateSelectionQuery(selectedCategoryFilters),
+    ).session(session);
 
     /*
     |--------------------------------------------------------------------------
@@ -434,6 +614,18 @@ const completeOnboarding = async (req, res) => {
           isDefault: false,
 
           walletName: wallet.walletName,
+
+          slug: wallet.slug,
+
+          description: wallet.description,
+
+          icon: wallet.icon,
+
+          color: wallet.color,
+
+          currency: wallet.currency,
+
+          sortOrder: wallet.sortOrder,
         })),
         {
           session,
@@ -457,6 +649,16 @@ const completeOnboarding = async (req, res) => {
           isDefault: false,
 
           name: category.name,
+
+          slug: category.slug,
+
+          description: category.description,
+
+          icon: category.icon,
+
+          color: category.color,
+
+          sortOrder: category.sortOrder,
         })),
         {
           session,
@@ -537,7 +739,10 @@ const getOnboardingOptions = async (req, res) => {
     const wallets = await Wallet.find({
       isDefault: true,
       isDeleted: false,
-    }).select("walletName");
+    })
+      .select("walletName slug description icon color currency sortOrder")
+      .sort({ sortOrder: 1, createdAt: 1 })
+      .lean();
 
     /*
     |--------------------------------------------------------------------------
@@ -548,7 +753,10 @@ const getOnboardingOptions = async (req, res) => {
     const categories = await TransactionCategory.find({
       isDefault: true,
       isDeleted: false,
-    }).select("name");
+    })
+      .select("name slug description icon color sortOrder")
+      .sort({ sortOrder: 1, createdAt: 1 })
+      .lean();
 
     /*
     |--------------------------------------------------------------------------
@@ -557,8 +765,8 @@ const getOnboardingOptions = async (req, res) => {
     */
 
     return successResponse(res, "Onboarding options fetched successfully", {
-      wallets,
-      categories,
+      wallets: wallets.map(formatWalletOption),
+      categories: categories.map(formatCategoryOption),
     });
   } catch (error) {
     return errorResponse(res, error.message);
