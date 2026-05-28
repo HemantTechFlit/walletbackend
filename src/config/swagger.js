@@ -25,6 +25,10 @@ const options = {
       },
       { name: "Categories", description: "Transaction categories" },
       { name: "Transactions", description: "Income and expense entries" },
+      {
+        name: "Planned Payments",
+        description: "Manual planned income/expense reminders",
+      },
       { name: "Transfers", description: "Wallet-to-wallet transfers" },
       { name: "Voice", description: "AI-assisted voice transaction drafts" },
       {
@@ -258,6 +262,59 @@ const options = {
             title: { type: "string", example: "Move to savings" },
             description: { type: "string", nullable: true },
             transferDate: { type: "string", format: "date-time" },
+          },
+        },
+        CreatePlannedPaymentRequest: {
+          type: "object",
+          required: [
+            "categoryId",
+            "type",
+            "title",
+            "amount",
+            "plannedType",
+            "startDate",
+          ],
+          properties: {
+            walletId: {
+              type: "string",
+              description:
+                "Optional. Uses user's defaultWalletId when omitted.",
+            },
+            categoryId: { type: "string" },
+            type: { type: "string", enum: ["INCOME", "EXPENSE"] },
+            title: { type: "string", example: "Car service" },
+            amount: { type: "number", example: 120 },
+            description: { type: "string", nullable: true },
+            plannedType: {
+              type: "string",
+              enum: ["ONE_TIME", "REPEATED"],
+              example: "REPEATED",
+            },
+            startDate: { type: "string", format: "date-time" },
+            repeatInterval: {
+              type: "integer",
+              example: 2,
+              description: "Required when plannedType is REPEATED",
+            },
+            repeatUnit: {
+              type: "string",
+              enum: ["DAYS", "WEEKS", "MONTHS", "YEARS"],
+              example: "WEEKS",
+              description: "Required when plannedType is REPEATED",
+            },
+            repeatUntilTimes: {
+              type: "integer",
+              example: 5,
+              description: "Required when plannedType is REPEATED",
+            },
+          },
+        },
+        PlannedPaymentDecisionRequest: {
+          type: "object",
+          required: ["occurrenceDate", "action"],
+          properties: {
+            occurrenceDate: { type: "string", format: "date-time" },
+            action: { type: "string", enum: ["ACCEPT", "DECLINE"] },
           },
         },
         CreateVoiceTransactionDraftRequest: {
@@ -833,6 +890,134 @@ const options = {
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             404: { description: "Not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/planned-payments": {
+        post: {
+          tags: ["Planned Payments"],
+          summary: "Create planned payment",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/CreatePlannedPaymentRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            201: { description: "Planned payment created" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            404: { description: "Wallet or category not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/planned-payments/occurrences": {
+        get: {
+          tags: ["Planned Payments"],
+          summary: "Fetch upcoming and overdue planned payment occurrences",
+          description:
+            "Returns undecided occurrences from today to today + days. For ALL/OVERDUE, overdue past occurrences are also included.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "days",
+              in: "query",
+              required: true,
+              schema: { type: "integer", minimum: 0 },
+            },
+            {
+              name: "type",
+              in: "query",
+              schema: {
+                type: "string",
+                enum: ["ALL", "UPCOMING", "OVERDUE"],
+                default: "ALL",
+              },
+            },
+          ],
+          responses: {
+            200: { description: "Planned payment occurrences" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/planned-payments/occurrences/decisions": {
+        get: {
+          tags: ["Planned Payments"],
+          summary: "Fetch accepted and declined planned payment occurrences",
+          description:
+            "Returns planned payment occurrences that the user has already accepted or declined. Accepted occurrences include the created transaction.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "status",
+              in: "query",
+              schema: {
+                type: "string",
+                enum: ["ALL", "ACCEPTED", "DECLINED"],
+                default: "ALL",
+              },
+            },
+            {
+              name: "plannedPaymentId",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            200: { description: "Planned payment decisions" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/planned-payments/{id}/occurrences/decision": {
+        post: {
+          tags: ["Planned Payments"],
+          summary: "Accept or decline one planned payment occurrence",
+          description:
+            "ACCEPT creates an income/expense transaction. DECLINE records the occurrence as declined so it no longer appears.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/PlannedPaymentDecisionRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Occurrence accepted or declined" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            404: {
+              description: "Planned payment, wallet, or category not found",
+            },
             500: { description: "Server error" },
           },
         },

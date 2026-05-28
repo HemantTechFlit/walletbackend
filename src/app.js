@@ -14,6 +14,7 @@ const transferRoutes = require("./routes/transferRoutes");
 const voiceRoutes = require("./routes/voiceRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
+const plannedPaymentRoutes = require("./routes/plannedPaymentRoutes");
 
 const app = express();
 connectDB();
@@ -31,6 +32,7 @@ app.use("/api/transfers", transferRoutes);
 app.use("/api/voice", voiceRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
+app.use("/api/planned-payments", plannedPaymentRoutes);
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get("/api/docs.json", (req, res) => {
   res.setHeader("Content-Type", "application/json");
