@@ -127,6 +127,60 @@ const createWallet = async (req, res) => {
   }
 };
 
+const updateWallet = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { walletName, color, icon, currency } = req.body;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return errorResponse(res, "Invalid wallet id", 400);
+    }
+
+    const wallet = await assertOwnWallet(req.user.userId, id);
+    if (!wallet) {
+      return errorResponse(res, "Wallet not found", 404);
+    }
+
+    if (walletName !== undefined) {
+      if (typeof walletName !== "string" || !walletName.trim()) {
+        return errorResponse(res, "walletName must be a non-empty string", 400);
+      }
+      wallet.walletName = walletName.trim();
+    }
+
+    if (color !== undefined) {
+      wallet.color = String(color).trim();
+    }
+
+    if (icon !== undefined) {
+      wallet.icon = String(icon).trim();
+    }
+
+    if (currency !== undefined && String(currency).trim() !== "") {
+      const currencyCode = String(currency).trim().toUpperCase();
+      if (currencyCode.length !== 3) {
+        return errorResponse(res, "currency must be a 3-letter code", 400);
+      }
+      wallet.currency = currencyCode;
+    }
+
+    wallet.updatedAt = new Date();
+    await wallet.save();
+
+    const balanceMap = await aggregateBalancesByWalletIds(req.user.userId, [id]);
+    const b = balanceMap.get(id) ?? { income: 0, expense: 0, balance: 0 };
+
+    return successResponse(res, "Wallet updated successfully", {
+      ...wallet.toObject(),
+      incomeTotal: b.income,
+      expenseTotal: b.expense,
+      balance: b.balance,
+    });
+  } catch (error) {
+    return errorResponse(res, error.message);
+  }
+};
+
 const deleteWallet = async (req, res) => {
   try {
     const { id } = req.params;
@@ -179,5 +233,6 @@ module.exports = {
   listWallets,
   getWallet,
   createWallet,
+  updateWallet,
   deleteWallet,
 };

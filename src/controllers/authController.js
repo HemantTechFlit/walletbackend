@@ -861,6 +861,65 @@ const forgotPassword = async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
+| RESET PASSWORD API
+|--------------------------------------------------------------------------
+*/
+
+const resetPassword = async (req, res) => {
+  try {
+    const { newPassword, confirmNewPassword } = req.body;
+    const userId = req.user.userId;
+
+    if (
+      !newPassword ||
+      typeof newPassword !== "string" ||
+      !newPassword.trim()
+    ) {
+      return errorResponse(res, "newPassword is required", 400);
+    }
+
+    if (
+      !confirmNewPassword ||
+      typeof confirmNewPassword !== "string" ||
+      !confirmNewPassword.trim()
+    ) {
+      return errorResponse(res, "confirmNewPassword is required", 400);
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      return errorResponse(res, "Passwords do not match", 400);
+    }
+
+    const user = await User.findOne({
+      _id: userId,
+      isDeleted: false,
+      status: "ACTIVE",
+    }).select("+passwordHash");
+
+    if (!user) {
+      return errorResponse(res, "User not found", 404);
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    user.updatedAt = new Date();
+    await user.save();
+
+    await Promise.all([
+      OTP.deleteMany({
+        userId: user._id,
+        purpose: "FORGOT_PASSWORD",
+      }),
+      Session.deleteMany({ userId: user._id }),
+    ]);
+
+    return successResponse(res, "Password reset successfully");
+  } catch (error) {
+    return errorResponse(res, error.message);
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
 | REFRESH TOKEN API
 |--------------------------------------------------------------------------
 */
@@ -931,6 +990,7 @@ module.exports = {
   completeOnboarding,
   getOnboardingOptions,
   forgotPassword,
+  resetPassword,
   refreshToken,
   logout,
 };

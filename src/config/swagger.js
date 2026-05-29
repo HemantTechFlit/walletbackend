@@ -110,6 +110,14 @@ const options = {
             email: { type: "string", example: "hemant@gmail.com" },
           },
         },
+        ResetPasswordRequest: {
+          type: "object",
+          required: ["newPassword", "confirmNewPassword"],
+          properties: {
+            newPassword: { type: "string", example: "NewPassword@123" },
+            confirmNewPassword: { type: "string", example: "NewPassword@123" },
+          },
+        },
         RefreshTokenRequest: {
           type: "object",
           required: ["refreshToken"],
@@ -240,6 +248,15 @@ const options = {
               description:
                 "Accepted for client compatibility. Wallet balance is calculated from transactions.",
             },
+          },
+        },
+        UpdateWalletRequest: {
+          type: "object",
+          properties: {
+            walletName: { type: "string", example: "Swiggy wallet" },
+            color: { type: "string", example: "0xff06c167" },
+            icon: { type: "string", example: "CustomIcons.wallet" },
+            currency: { type: "string", example: "USD" },
           },
         },
         CreateCategoryRequest: {
@@ -470,6 +487,30 @@ const options = {
           },
           responses: {
             200: { description: "OTP sent" },
+            404: { description: "User not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/auth/reset-password": {
+        post: {
+          tags: ["Auth"],
+          summary: "Reset logged-in user's password",
+          description:
+            "Requires access token. Updates the current user's password without forgot-password or OTP verification.",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ResetPasswordRequest" },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Password reset" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized or invalid token" },
             404: { description: "User not found" },
             500: { description: "Server error" },
           },
@@ -717,6 +758,35 @@ const options = {
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             404: { description: "Not found" },
+            500: { description: "Server error" },
+          },
+        },
+        patch: {
+          tags: ["Wallets"],
+          summary: "Update wallet",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UpdateWalletRequest" },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Wallet updated" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            404: { description: "Wallet not found" },
             500: { description: "Server error" },
           },
         },

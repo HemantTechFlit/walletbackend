@@ -9,6 +9,7 @@ const {
   verifyOTP,
   login,
   forgotPassword,
+  resetPassword,
   refreshToken,
   logout,
   completeOnboarding,
@@ -26,6 +27,8 @@ router.post("/complete-onboarding", authMiddleware, completeOnboarding);
 router.get("/onboarding-options", authMiddleware, getOnboardingOptions);
 
 router.post("/forgot-password", forgotPassword);
+
+router.post("/reset-password", authMiddleware, resetPassword);
 
 router.post("/refresh-token", refreshToken);
 

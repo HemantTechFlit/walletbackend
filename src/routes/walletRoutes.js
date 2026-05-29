@@ -6,6 +6,7 @@ const {
   listWallets,
   getWallet,
   createWallet,
+  updateWallet,
   deleteWallet,
 } = require("../controllers/walletController");
 
@@ -16,6 +17,7 @@ router.use(authMiddleware, requireOnboarding);
 router.get("/", listWallets);
 router.get("/:id", getWallet);
 router.post("/", createWallet);
+router.patch("/:id", updateWallet);
 router.delete("/:id", deleteWallet);
 
 module.exports = router;
