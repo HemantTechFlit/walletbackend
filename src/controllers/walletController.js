@@ -15,6 +15,19 @@ const assertOwnWallet = async (userId, walletId) => {
   return wallet;
 };
 
+const parseOpeningAmount = (value, fieldName) => {
+  if (value === undefined || value === null || value === "") {
+    return { value: 0 };
+  }
+
+  const parsed = Number(value);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return { error: `${fieldName} must be a non-negative number` };
+  }
+
+  return { value: parsed };
+};
+
 const listWallets = async (req, res) => {
   try {
     const wallets = await Wallet.find({
@@ -74,7 +87,15 @@ const getWallet = async (req, res) => {
 
 const createWallet = async (req, res) => {
   try {
-    const { walletName, color, icon, currency } = req.body;
+    const {
+      walletName,
+      color,
+      icon,
+      currency,
+      incomeTotal,
+      expenseTotal,
+      balance,
+    } = req.body;
 
     if (!walletName || typeof walletName !== "string" || !walletName.trim()) {
       return errorResponse(res, "walletName is required", 400);
@@ -88,12 +109,33 @@ const createWallet = async (req, res) => {
       }
     }
 
+    const parsedIncomeTotal = parseOpeningAmount(incomeTotal, "incomeTotal");
+    if (parsedIncomeTotal.error) {
+      return errorResponse(res, parsedIncomeTotal.error, 400);
+    }
+
+    const parsedExpenseTotal = parseOpeningAmount(expenseTotal, "expenseTotal");
+    if (parsedExpenseTotal.error) {
+      return errorResponse(res, parsedExpenseTotal.error, 400);
+    }
+
+    const parsedBalance = parseOpeningAmount(balance, "balance");
+    if (parsedBalance.error) {
+      return errorResponse(res, parsedBalance.error, 400);
+    }
+
     await assertCanCreateWallet(req.user.userId);
 
     const payload = {
       userId: req.user.userId,
       isDefault: false,
       walletName: walletName.trim(),
+      incomeTotal: parsedIncomeTotal.value,
+      expenseTotal: parsedExpenseTotal.value,
+      balance:
+        balance === undefined || balance === null || balance === ""
+          ? parsedIncomeTotal.value - parsedExpenseTotal.value
+          : parsedBalance.value,
     };
 
     if (color !== undefined) {
@@ -117,9 +159,9 @@ const createWallet = async (req, res) => {
 
     return successResponse(res, "Wallet created successfully", {
       ...wallet.toObject(),
-      incomeTotal: 0,
-      expenseTotal: 0,
-      balance: 0,
+      incomeTotal: wallet.incomeTotal,
+      expenseTotal: wallet.expenseTotal,
+      balance: wallet.balance,
     }, 201);
   } catch (error) {
     const code = error.statusCode || 500;

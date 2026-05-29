@@ -1,4 +1,6 @@
 const mongoose = require("mongoose");
+
+const Wallet = require("../models/Wallet");
 const WalletTransaction = require("../models/WalletTransaction");
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
@@ -6,38 +8,67 @@ const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 const aggregateBalancesByWalletIds = async (userId, walletIds) => {
   const uid = toObjectId(userId);
   const match = { userId: uid, isDeleted: false };
+  const walletFilter = { userId: uid, isDeleted: false };
 
   if (walletIds?.length) {
-    match.walletId = { $in: walletIds.map((id) => toObjectId(id)) };
+    const ids = walletIds.map((id) => toObjectId(id));
+    match.walletId = { $in: ids };
+    walletFilter._id = { $in: ids };
   }
 
-  const rows = await WalletTransaction.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: "$walletId",
-        income: {
-          $sum: {
-            $cond: [{ $eq: ["$type", "INCOME"] }, "$amount", 0],
+  const [wallets, rows] = await Promise.all([
+    Wallet.find(walletFilter).select("incomeTotal expenseTotal balance").lean(),
+    WalletTransaction.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: "$walletId",
+          income: {
+            $sum: {
+              $cond: [{ $eq: ["$type", "INCOME"] }, "$amount", 0],
+            },
           },
-        },
-        expense: {
-          $sum: {
-            $cond: [{ $eq: ["$type", "EXPENSE"] }, "$amount", 0],
+          expense: {
+            $sum: {
+              $cond: [{ $eq: ["$type", "EXPENSE"] }, "$amount", 0],
+            },
           },
         },
       },
-    },
+    ]),
   ]);
 
   const map = new Map();
-  for (const row of rows) {
-    map.set(row._id.toString(), {
-      income: row.income,
-      expense: row.expense,
-      balance: row.income - row.expense,
+  for (const wallet of wallets) {
+    const income = Number(wallet.incomeTotal) || 0;
+    const expense = Number(wallet.expenseTotal) || 0;
+    const storedBalance = Number(wallet.balance);
+    const balance = Number.isNaN(storedBalance)
+      ? income - expense
+      : storedBalance;
+
+    map.set(wallet._id.toString(), {
+      income,
+      expense,
+      balance,
     });
   }
+
+  for (const row of rows) {
+    const walletId = row._id.toString();
+    const current = map.get(walletId) ?? {
+      income: 0,
+      expense: 0,
+      balance: 0,
+    };
+
+    map.set(walletId, {
+      income: current.income + row.income,
+      expense: current.expense + row.expense,
+      balance: current.balance + row.income - row.expense,
+    });
+  }
+
   return map;
 };
 

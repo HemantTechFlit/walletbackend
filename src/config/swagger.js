@@ -232,21 +232,21 @@ const options = {
             currency: { type: "string", example: "USD" },
             incomeTotal: {
               type: "number",
-              example: 0,
+              example: 52000,
               description:
-                "Accepted for client compatibility. Wallet totals are calculated from transactions.",
+                "Opening income total for the wallet. Future income transactions are added to this.",
             },
             expenseTotal: {
               type: "number",
               example: 0,
               description:
-                "Accepted for client compatibility. Wallet totals are calculated from transactions.",
+                "Opening expense total for the wallet. Future expense transactions are added to this.",
             },
             balance: {
               type: "number",
-              example: 0,
+              example: 52000,
               description:
-                "Accepted for client compatibility. Wallet balance is calculated from transactions.",
+                "Opening wallet balance. If omitted, incomeTotal - expenseTotal is used.",
             },
           },
         },
@@ -291,6 +291,21 @@ const options = {
               type: "string",
               format: "date-time",
               description: "Defaults to now if omitted",
+            },
+          },
+        },
+        UpdateTransactionRequest: {
+          type: "object",
+          properties: {
+            walletId: { type: "string" },
+            categoryId: { type: "string" },
+            type: { type: "string", enum: ["INCOME", "EXPENSE"] },
+            amount: { type: "number", example: 99.5 },
+            title: { type: "string", example: "Salary" },
+            description: { type: "string", nullable: true },
+            transactionDate: {
+              type: "string",
+              format: "date-time",
             },
           },
         },
@@ -965,6 +980,37 @@ const options = {
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             404: { description: "Not found" },
+            500: { description: "Server error" },
+          },
+        },
+        patch: {
+          tags: ["Transactions"],
+          summary: "Update transaction",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/UpdateTransactionRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Transaction updated" },
+            400: { description: "Validation failed or insufficient balance" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            404: { description: "Transaction, wallet, or category not found" },
             500: { description: "Server error" },
           },
         },

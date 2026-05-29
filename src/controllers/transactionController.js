@@ -4,7 +4,10 @@ const WalletTransaction = require("../models/WalletTransaction");
 const Wallet = require("../models/Wallet");
 const TransactionCategory = require("../models/TransactionCategory");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
-const { assertSufficientWalletBalance } = require("../utils/walletBalance");
+const {
+  aggregateBalancesByWalletIds,
+  assertSufficientWalletBalance,
+} = require("../utils/walletBalance");
 
 const parseDate = (value, endOfDay = false) => {
   if (!value) {
@@ -203,6 +206,183 @@ const createTransaction = async (req, res) => {
   }
 };
 
+const getTransactionWalletEffect = (transaction) => {
+  const amount = Number(transaction.amount);
+  return transaction.type === "INCOME" ? amount : -amount;
+};
+
+const assertWalletBalancesAfterTransactionUpdate = async (
+  userId,
+  existingTransaction,
+  nextTransaction,
+) => {
+  const walletIds = [
+    existingTransaction.walletId.toString(),
+    nextTransaction.walletId.toString(),
+  ];
+  const uniqueWalletIds = [...new Set(walletIds)];
+  const balanceMap = await aggregateBalancesByWalletIds(userId, uniqueWalletIds);
+
+  const projectedBalances = new Map(
+    uniqueWalletIds.map((walletId) => [
+      walletId,
+      balanceMap.get(walletId)?.balance ?? 0,
+    ]),
+  );
+
+  const existingWalletId = existingTransaction.walletId.toString();
+  const nextWalletId = nextTransaction.walletId.toString();
+
+  projectedBalances.set(
+    existingWalletId,
+    projectedBalances.get(existingWalletId) -
+      getTransactionWalletEffect(existingTransaction),
+  );
+  projectedBalances.set(
+    nextWalletId,
+    projectedBalances.get(nextWalletId) +
+      getTransactionWalletEffect(nextTransaction),
+  );
+
+  const hasNegativeBalance = [...projectedBalances.values()].some(
+    (balance) => balance < 0,
+  );
+
+  if (hasNegativeBalance) {
+    const err = new Error("Your wallet balance is less than the payment amount.");
+    err.statusCode = 400;
+    throw err;
+  }
+};
+
+const updateTransaction = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+    const {
+      walletId,
+      categoryId,
+      type,
+      amount,
+      title,
+      description,
+      transactionDate,
+    } = req.body;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return errorResponse(res, "Invalid id", 400);
+    }
+
+    const transaction = await WalletTransaction.findOne({
+      _id: id,
+      userId,
+      isDeleted: false,
+    });
+
+    if (!transaction) {
+      return errorResponse(res, "Transaction not found", 404);
+    }
+
+    if (walletId !== undefined && !mongoose.isValidObjectId(walletId)) {
+      return errorResponse(res, "Valid walletId is required", 400);
+    }
+
+    if (categoryId !== undefined && !mongoose.isValidObjectId(categoryId)) {
+      return errorResponse(res, "Valid categoryId is required", 400);
+    }
+
+    if (type !== undefined && !["INCOME", "EXPENSE"].includes(type)) {
+      return errorResponse(res, "type must be INCOME or EXPENSE", 400);
+    }
+
+    let parsedAmount;
+    if (amount !== undefined) {
+      parsedAmount = Number(amount);
+      if (parsedAmount <= 0 || Number.isNaN(parsedAmount)) {
+        return errorResponse(res, "amount must be a positive number", 400);
+      }
+    }
+
+    if (title !== undefined && (typeof title !== "string" || !title.trim())) {
+      return errorResponse(res, "title must be a non-empty string", 400);
+    }
+
+    let parsedTransactionDate;
+    if (transactionDate !== undefined) {
+      parsedTransactionDate = new Date(transactionDate);
+      if (Number.isNaN(parsedTransactionDate.getTime())) {
+        return errorResponse(res, "Invalid transactionDate", 400);
+      }
+    }
+
+    const nextWalletId = walletId ?? transaction.walletId;
+    const nextCategoryId = categoryId ?? transaction.categoryId;
+    const nextType = type ?? transaction.type;
+    const nextAmount = parsedAmount ?? transaction.amount;
+
+    const [wallet, category] = await Promise.all([
+      assertOwnWallet(userId, nextWalletId),
+      assertCategoryForUser(userId, nextCategoryId),
+    ]);
+
+    if (!wallet) {
+      return errorResponse(res, "Wallet not found", 404);
+    }
+
+    if (!category) {
+      return errorResponse(res, "Category not found", 404);
+    }
+
+    try {
+      await assertWalletBalancesAfterTransactionUpdate(userId, transaction, {
+        walletId: nextWalletId,
+        type: nextType,
+        amount: nextAmount,
+      });
+    } catch (error) {
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
+
+    transaction.walletId = nextWalletId;
+    transaction.categoryId = nextCategoryId;
+    transaction.type = nextType;
+    transaction.amount = nextAmount;
+
+    if (title !== undefined) {
+      transaction.title = title.trim();
+    }
+
+    if (description !== undefined) {
+      transaction.description = description ?? null;
+    }
+
+    if (parsedTransactionDate) {
+      transaction.transactionDate = parsedTransactionDate;
+    }
+
+    transaction.categorySnapshot = {
+      name: category.name,
+      color: category.color,
+      icon: category.icon,
+    };
+    transaction.walletSnapshot = {
+      walletName: wallet.walletName,
+      walletColor: wallet.color,
+    };
+    transaction.updatedAt = new Date();
+
+    await transaction.save();
+
+    const populated = await WalletTransaction.findById(transaction._id)
+      .populate("walletId", "walletName")
+      .populate("categoryId", "name");
+
+    return successResponse(res, "Transaction updated successfully", populated);
+  } catch (error) {
+    return errorResponse(res, error.message);
+  }
+};
+
 const deleteTransaction = async (req, res) => {
   try {
     const { id } = req.params;
@@ -234,5 +414,6 @@ module.exports = {
   listTransactions,
   getTransaction,
   createTransaction,
+  updateTransaction,
   deleteTransaction,
 };
