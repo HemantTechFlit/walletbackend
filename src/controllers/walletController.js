@@ -74,26 +74,53 @@ const getWallet = async (req, res) => {
 
 const createWallet = async (req, res) => {
   try {
-    const { walletName } = req.body;
+    const { walletName, color, icon, currency } = req.body;
 
     if (!walletName || typeof walletName !== "string" || !walletName.trim()) {
       return errorResponse(res, "walletName is required", 400);
     }
 
+    let currencyCode;
+    if (currency !== undefined && String(currency).trim() !== "") {
+      currencyCode = String(currency).trim().toUpperCase();
+      if (currencyCode.length !== 3) {
+        return errorResponse(res, "currency must be a 3-letter code", 400);
+      }
+    }
+
     await assertCanCreateWallet(req.user.userId);
 
-    const wallet = await Wallet.create({
+    const payload = {
       userId: req.user.userId,
       isDefault: false,
       walletName: walletName.trim(),
-    });
+    };
+
+    if (color !== undefined) {
+      payload.color = String(color).trim();
+    }
+
+    if (icon !== undefined) {
+      payload.icon = String(icon).trim();
+    }
+
+    if (currencyCode) {
+      payload.currency = currencyCode;
+    }
+
+    const wallet = await Wallet.create(payload);
 
     await User.findByIdAndUpdate(req.user.userId, {
       $addToSet: { selectedWallets: wallet._id },
       $set: { updatedAt: new Date() },
     });
 
-    return successResponse(res, "Wallet created successfully", wallet, 201);
+    return successResponse(res, "Wallet created successfully", {
+      ...wallet.toObject(),
+      incomeTotal: 0,
+      expenseTotal: 0,
+      balance: 0,
+    }, 201);
   } catch (error) {
     const code = error.statusCode || 500;
     return errorResponse(res, error.message, code);

@@ -23,7 +23,7 @@ const listCategories = async (req, res) => {
 
 const createCategory = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, color, icon } = req.body;
     const userId = req.user.userId;
 
     if (!name || typeof name !== "string" || !name.trim()) {
@@ -42,11 +42,21 @@ const createCategory = async (req, res) => {
       return errorResponse(res, "Category with this name already exists", 400);
     }
 
-    const category = await TransactionCategory.create({
+    const payload = {
       userId,
       name: trimmed,
       isDefault: false,
-    });
+    };
+
+    if (color !== undefined) {
+      payload.color = String(color).trim();
+    }
+
+    if (icon !== undefined) {
+      payload.icon = String(icon).trim();
+    }
+
+    const category = await TransactionCategory.create(payload);
 
     await User.findByIdAndUpdate(userId, {
       $addToSet: { selectedCategories: category._id },
