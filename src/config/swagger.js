@@ -255,7 +255,9 @@ const options = {
           type: "object",
           required: ["name"],
           properties: {
-            name: { type: "string", example: "Food" },
+            name: { type: "string", example: "Groceries" },
+            color: { type: "string", example: "0xff4549ff" },
+            icon: { type: "string", example: "CustomIcons.catFood" },
           },
         },
         CreateTransactionRequest: {

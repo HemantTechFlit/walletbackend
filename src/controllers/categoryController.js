@@ -72,7 +72,7 @@ const createCategory = async (req, res) => {
 const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name } = req.body;
+    const { name, color, icon } = req.body;
     const userId = req.user.userId;
 
     if (!mongoose.isValidObjectId(id)) {
@@ -94,6 +94,15 @@ const updateCategory = async (req, res) => {
     }
 
     category.name = name.trim();
+
+    if (color !== undefined) {
+      category.color = String(color).trim();
+    }
+
+    if (icon !== undefined) {
+      category.icon = String(icon).trim();
+    }
+
     category.updatedAt = new Date();
     await category.save();
 
