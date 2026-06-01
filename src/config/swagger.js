@@ -11,30 +11,21 @@ const options = {
     },
     servers: [
       {
-        url: "https://expense-tracker-ip37.onrender.com",
-        description: "Expense Tracker API production server",
+        url: "http://localhost:3000",
+        description: "Local development server",
       },
     ],
     tags: [
       { name: "Auth", description: "Authentication APIs" },
       { name: "Onboarding", description: "Onboarding APIs" },
       { name: "Users", description: "Current user profile and preferences" },
-      {
-        name: "Wallets",
-        description: "User wallets (requires completed onboarding)",
-      },
+      { name: "Wallets", description: "User wallets (requires completed onboarding)" },
       { name: "Categories", description: "Transaction categories" },
       { name: "Transactions", description: "Income and expense entries" },
-      {
-        name: "Planned Payments",
-        description: "Manual planned income/expense reminders",
-      },
+      { name: "Planned Payments", description: "Manual planned income/expense reminders" },
       { name: "Transfers", description: "Wallet-to-wallet transfers" },
       { name: "Voice", description: "AI-assisted voice transaction drafts" },
-      {
-        name: "Reports",
-        description: "CSV/PDF reports uploaded to Google Drive",
-      },
+      { name: "Reports", description: "CSV/PDF reports uploaded to Google Drive" },
       {
         name: "Subscriptions",
         description: "User subscription and effective plan",
@@ -112,8 +103,9 @@ const options = {
         },
         ResetPasswordRequest: {
           type: "object",
-          required: ["newPassword", "confirmNewPassword"],
+          required: ["email", "newPassword", "confirmNewPassword"],
           properties: {
+            email: { type: "string", example: "hemant@gmail.com" },
             newPassword: { type: "string", example: "NewPassword@123" },
             confirmNewPassword: { type: "string", example: "NewPassword@123" },
           },
@@ -186,8 +178,7 @@ const options = {
             },
             removeProfileImage: {
               type: "boolean",
-              description:
-                "Set true to clear profileImage (multipart form field)",
+              description: "Set true to clear profileImage (multipart form field)",
             },
           },
         },
@@ -202,8 +193,7 @@ const options = {
             profileImage: {
               type: "string",
               format: "binary",
-              description:
-                "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
+              description: "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
             },
             removeProfileImage: {
               type: "string",
@@ -279,7 +269,13 @@ const options = {
         },
         CreateTransactionRequest: {
           type: "object",
-          required: ["walletId", "categoryId", "type", "amount", "title"],
+          required: [
+            "walletId",
+            "categoryId",
+            "type",
+            "amount",
+            "title",
+          ],
           properties: {
             walletId: { type: "string" },
             categoryId: { type: "string" },
@@ -510,10 +506,9 @@ const options = {
       "/api/auth/reset-password": {
         post: {
           tags: ["Auth"],
-          summary: "Reset logged-in user's password",
+          summary: "Reset password after OTP verification",
           description:
-            "Requires access token. Updates the current user's password without forgot-password or OTP verification.",
-          security: [{ bearerAuth: [] }],
+            "Does not require an access token. Call forgot-password, verify the OTP, then reset the password with the same email.",
           requestBody: {
             required: true,
             content: {
@@ -525,7 +520,6 @@ const options = {
           responses: {
             200: { description: "Password reset" },
             400: { description: "Validation failed" },
-            401: { description: "Unauthorized or invalid token" },
             404: { description: "User not found" },
             500: { description: "Server error" },
           },
@@ -669,9 +663,7 @@ const options = {
             },
           },
           responses: {
-            200: {
-              description: "Profile updated; profileImage is Google Drive URL",
-            },
+            200: { description: "Profile updated; profileImage is Google Drive URL" },
             400: { description: "Validation failed or invalid image" },
             401: { description: "Unauthorized" },
             503: { description: "Google Drive not configured" },
@@ -688,9 +680,7 @@ const options = {
             required: true,
             content: {
               "application/json": {
-                schema: {
-                  $ref: "#/components/schemas/SetDefaultWalletRequest",
-                },
+                schema: { $ref: "#/components/schemas/SetDefaultWalletRequest" },
               },
             },
           },
@@ -1156,9 +1146,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            404: {
-              description: "Planned payment, wallet, or category not found",
-            },
+            404: { description: "Planned payment, wallet, or category not found" },
             500: { description: "Server error" },
           },
         },
@@ -1212,8 +1200,7 @@ const options = {
       "/api/voice/transaction-draft": {
         post: {
           tags: ["Voice"],
-          summary:
-            "Generate an AI transaction or transfer draft from transcript text",
+          summary: "Generate an AI transaction or transfer draft from transcript text",
           description:
             "Returns a confirmation draft only. The frontend should let the user confirm or edit it, then call the existing transaction or transfer create API.",
           security: [{ bearerAuth: [] }],
@@ -1232,9 +1219,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            503: {
-              description: "Local or self-hosted voice model unavailable",
-            },
+            503: { description: "Local or self-hosted voice model unavailable" },
             500: { description: "Server error" },
           },
         },
@@ -1349,7 +1334,7 @@ const options = {
       },
     },
   },
-  apis: ["../routes/*.js"],
+  apis: [],
 };
 
 const swaggerSpec = swaggerJsdoc(options);

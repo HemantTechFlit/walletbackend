@@ -401,9 +401,10 @@ const signup = async (req, res) => {
 const verifyOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
+    const normalizedEmail = String(email || "").trim().toLowerCase();
 
     const existingOTP = await OTP.findOne({
-      email,
+      email: normalizedEmail,
       otp,
       purpose: "FORGOT_PASSWORD",
       verified: false,
@@ -782,6 +783,7 @@ const getOnboardingOptions = async (req, res) => {
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
+    const normalizedEmail = String(email || "").trim().toLowerCase();
 
     /*
     |--------------------------------------------------------------------------
@@ -790,7 +792,7 @@ const forgotPassword = async (req, res) => {
     */
 
     const user = await User.findOne({
-      email,
+      email: normalizedEmail,
       isDeleted: false,
     });
 
@@ -805,7 +807,7 @@ const forgotPassword = async (req, res) => {
     */
 
     await OTP.deleteMany({
-      email,
+      email: normalizedEmail,
       purpose: "FORGOT_PASSWORD",
     });
 
@@ -819,7 +821,7 @@ const forgotPassword = async (req, res) => {
 
     await OTP.create({
       userId: user._id,
-      email,
+      email: normalizedEmail,
       otp,
       purpose: "FORGOT_PASSWORD",
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
@@ -832,7 +834,7 @@ const forgotPassword = async (req, res) => {
     */
 
     await sendEmail({
-      to: email,
+      to: normalizedEmail,
       subject: "Forgot Password OTP",
       html: `
         <h2>Forgot Password</h2>
@@ -867,8 +869,16 @@ const forgotPassword = async (req, res) => {
 
 const resetPassword = async (req, res) => {
   try {
-    const { newPassword, confirmNewPassword } = req.body;
-    const userId = req.user.userId;
+    const { email, newPassword, confirmNewPassword } = req.body;
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      return errorResponse(res, "email is required", 400);
+    }
+
+    if (!validator.isEmail(normalizedEmail)) {
+      return errorResponse(res, "Invalid email", 400);
+    }
 
     if (
       !newPassword ||
@@ -890,8 +900,20 @@ const resetPassword = async (req, res) => {
       return errorResponse(res, "Passwords do not match", 400);
     }
 
+    const verifiedOTP = await OTP.findOne({
+      email: normalizedEmail,
+      purpose: "FORGOT_PASSWORD",
+      verified: true,
+      expiresAt: { $gt: new Date() },
+    }).sort({ createdAt: -1 });
+
+    if (!verifiedOTP) {
+      return errorResponse(res, "OTP verification required", 400);
+    }
+
     const user = await User.findOne({
-      _id: userId,
+      _id: verifiedOTP.userId,
+      email: normalizedEmail,
       isDeleted: false,
       status: "ACTIVE",
     }).select("+passwordHash");

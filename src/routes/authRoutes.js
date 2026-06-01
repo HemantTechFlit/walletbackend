@@ -28,7 +28,7 @@ router.get("/onboarding-options", authMiddleware, getOnboardingOptions);
 
 router.post("/forgot-password", forgotPassword);
 
-router.post("/reset-password", authMiddleware, resetPassword);
+router.post("/reset-password", resetPassword);
 
 router.post("/refresh-token", refreshToken);
 
