@@ -95,6 +95,29 @@ const options = {
             password: { type: "string", example: "Password@123" },
           },
         },
+        SocialAuthRequest: {
+          type: "object",
+          required: ["idToken"],
+          properties: {
+            idToken: {
+              type: "string",
+              description:
+                "Provider identity token from Google Sign-In or Apple Sign-In.",
+            },
+            fullName: {
+              type: "string",
+              description:
+                "Optional. Useful for Apple first sign-in when name is only returned by the client.",
+              example: "Hemant Kumar",
+            },
+            currency: {
+              type: "string",
+              description:
+                "Optional ISO 4217 currency code for first-time social users.",
+              example: "USD",
+            },
+          },
+        },
         VerifyOtpRequest: {
           type: "object",
           required: ["email", "otp"],
@@ -477,6 +500,48 @@ const options = {
           responses: {
             200: { description: "Login successful with tokens" },
             400: { description: "Invalid credentials" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/auth/google": {
+        post: {
+          tags: ["Auth"],
+          summary: "Sign in with Google",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SocialAuthRequest" },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Google login successful with tokens" },
+            400: { description: "Invalid token or configuration" },
+            403: { description: "User is not active" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/auth/apple": {
+        post: {
+          tags: ["Auth"],
+          summary: "Sign in with Apple",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SocialAuthRequest" },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Apple login successful with tokens" },
+            400: {
+              description: "Invalid token, missing email, or configuration",
+            },
+            403: { description: "User is not active" },
             500: { description: "Server error" },
           },
         },

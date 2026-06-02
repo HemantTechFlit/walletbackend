@@ -8,6 +8,8 @@ const {
   signup,
   verifyOTP,
   login,
+  googleLogin,
+  appleLogin,
   forgotPassword,
   resetPassword,
   refreshToken,
@@ -21,6 +23,10 @@ router.post("/signup", signup);
 router.post("/verify-otp", verifyOTP);
 
 router.post("/login", login);
+
+router.post("/google", googleLogin);
+
+router.post("/apple", appleLogin);
 
 router.post("/complete-onboarding", authMiddleware, completeOnboarding);
 

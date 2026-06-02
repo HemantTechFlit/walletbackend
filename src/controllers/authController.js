@@ -16,6 +16,7 @@ const {
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { seedPlansIfEmpty, assignBasicPlanToUser } = require("../utils/planLimits");
 const sendEmail = require("../utils/sendEmail");
+const { verifyProviderIdToken } = require("../utils/socialAuth");
 const Wallet = require("../models/Wallet");
 const TransactionCategory = require("../models/TransactionCategory");
 
@@ -271,6 +272,153 @@ const formatCategoryOption = (category) => ({
   icon: category.icon || category.slug,
   color: category.color,
 });
+
+const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+
+const createAuthSession = async ({ user, req }) => {
+  user.lastLoginAt = new Date();
+  await user.save();
+
+  const payload = {
+    userId: user._id,
+    email: user.email,
+  };
+
+  const accessToken = generateAccessToken(payload);
+  const refreshToken = generateRefreshToken(payload);
+
+  await Session.create({
+    userId: user._id,
+    refreshToken,
+    deviceInfo: {
+      userAgent: req.headers["user-agent"],
+    },
+    ipAddress: req.ip,
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  });
+
+  const responseUser = user.toObject ? user.toObject() : user;
+  delete responseUser.passwordHash;
+
+  return {
+    accessToken,
+    refreshToken,
+    user: responseUser,
+  };
+};
+
+const getSocialProviderInput = (provider, body) => {
+  const normalizedProvider = provider.toUpperCase();
+  const fullName =
+    typeof body.fullName === "string" && body.fullName.trim()
+      ? body.fullName.trim()
+      : null;
+  const currency = String(body.currency || "AUD").trim().toUpperCase();
+
+  return {
+    provider: normalizedProvider,
+    idToken: body.idToken || body.identityToken || body.token,
+    fullName,
+    currency: currency.length === 3 ? currency : "AUD",
+  };
+};
+
+const upsertSocialUser = async ({ provider, claims, fullName, currency }) => {
+  const providerUserId = claims.sub;
+  const email = normalizeEmail(claims.email);
+  const providerFilter = {
+    authProviders: {
+      $elemMatch: {
+        provider,
+        providerUserId,
+      },
+    },
+    isDeleted: false,
+  };
+
+  let user = await User.findOne(providerFilter).select("+passwordHash");
+
+  if (!user && email) {
+    user = await User.findOne({ email, isDeleted: false }).select("+passwordHash");
+  }
+
+  if (user && user.status !== "ACTIVE") {
+    const error = new Error("User is not active");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const providerEntry = {
+    provider,
+    providerUserId,
+    email,
+    linkedAt: new Date(),
+  };
+
+  if (user) {
+    const alreadyLinked = (user.authProviders || []).some(
+      (entry) =>
+        entry.provider === provider && entry.providerUserId === providerUserId,
+    );
+
+    if (!alreadyLinked) {
+      user.authProviders = [...(user.authProviders || []), providerEntry];
+    }
+
+    return user;
+  }
+
+  if (!email) {
+    const error = new Error("Email is required from social provider for first login");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await seedPlansIfEmpty();
+
+  user = await User.create({
+    fullName: fullName || claims.name || email.split("@")[0],
+    email,
+    currency,
+    onboardingCompleted: false,
+    status: "ACTIVE",
+    authProviders: [providerEntry],
+  });
+
+  await assignBasicPlanToUser(user._id);
+
+  return user;
+};
+
+const socialLogin = (providerName) => async (req, res) => {
+  try {
+    const { provider, idToken, fullName, currency } = getSocialProviderInput(
+      providerName,
+      req.body,
+    );
+
+    const claims = await verifyProviderIdToken({
+      provider: providerName,
+      idToken,
+    });
+
+    const user = await upsertSocialUser({
+      provider,
+      claims,
+      fullName,
+      currency,
+    });
+
+    const data = await createAuthSession({ user, req });
+
+    return successResponse(res, `${provider} login successful`, data);
+  } catch (error) {
+    return errorResponse(res, error.message, error.statusCode || 400);
+  }
+};
+
+const googleLogin = socialLogin("google");
+const appleLogin = socialLogin("apple");
 /*
 |--------------------------------------------------------------------------
 | SIGNUP API
@@ -358,6 +506,13 @@ const signup = async (req, res) => {
           mobileNumber,
           passwordHash: hashedPassword,
           currency: currencyCode,
+          authProviders: [
+            {
+              provider: "PASSWORD",
+              providerUserId: email.toLowerCase(),
+              email: email.toLowerCase(),
+            },
+          ],
 
           // directly verified
           isEmailVerified: true,
@@ -463,6 +618,10 @@ const login = async (req, res) => {
       return errorResponse(res, "Email not registered", 400);
     }
 
+    if (!user.passwordHash) {
+      return errorResponse(res, "Please sign in with your social account", 400);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Password Validation
@@ -481,51 +640,7 @@ const login = async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    user.lastLoginAt = new Date();
-
-    await user.save();
-
-    /*
-    |--------------------------------------------------------------------------
-    | Generate Tokens
-    |--------------------------------------------------------------------------
-    */
-
-    const payload = {
-      userId: user._id,
-      email: user.email,
-    };
-
-    const accessToken = generateAccessToken(payload);
-
-    const refreshToken = generateRefreshToken(payload);
-
-    /*
-    |--------------------------------------------------------------------------
-    | Store Session
-    |--------------------------------------------------------------------------
-    */
-
-    await Session.create({
-      userId: user._id,
-      refreshToken,
-
-      deviceInfo: {
-        userAgent: req.headers["user-agent"],
-      },
-
-      ipAddress: req.ip,
-
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | Remove Password Before Response
-    |--------------------------------------------------------------------------
-    */
-
-    user.passwordHash = undefined;
+    const data = await createAuthSession({ user, req });
 
     /*
     |--------------------------------------------------------------------------
@@ -534,9 +649,7 @@ const login = async (req, res) => {
     */
 
     return successResponse(res, "Login successful", {
-      accessToken,
-      refreshToken,
-      user,
+      ...data,
     });
   } catch (error) {
     console.log(error);
@@ -1009,6 +1122,8 @@ module.exports = {
   signup,
   verifyOTP,
   login,
+  googleLogin,
+  appleLogin,
   completeOnboarding,
   getOnboardingOptions,
   forgotPassword,

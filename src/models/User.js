@@ -28,9 +28,30 @@ const userSchema = new mongoose.Schema(
 
     passwordHash: {
       type: String,
-      required: true,
       select: false,
     },
+    authProviders: [
+      {
+        provider: {
+          type: String,
+          enum: ["PASSWORD", "GOOGLE", "APPLE"],
+          required: true,
+        },
+        providerUserId: {
+          type: String,
+          required: true,
+        },
+        email: {
+          type: String,
+          lowercase: true,
+          trim: true,
+        },
+        linkedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     profileImage: {
       type: String,
       default: null,
@@ -89,6 +110,11 @@ const userSchema = new mongoose.Schema(
   {
     versionKey: false,
   },
+);
+
+userSchema.index(
+  { "authProviders.provider": 1, "authProviders.providerUserId": 1 },
+  { sparse: true },
 );
 
 module.exports = mongoose.model("User", userSchema);
