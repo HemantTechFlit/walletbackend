@@ -144,7 +144,7 @@ const createTransaction = async (req, res) => {
     if (!walletId || !mongoose.isValidObjectId(walletId)) {
       return errorResponse(res, "Valid walletId is required", 400);
     }
-    if (!categoryId || !mongoose.isValidObjectId(categoryId)) {
+    if (categoryId && !mongoose.isValidObjectId(categoryId)) {
       return errorResponse(res, "Valid categoryId is required", 400);
     }
     if (!type || !["INCOME", "EXPENSE"].includes(type)) {
@@ -162,8 +162,10 @@ const createTransaction = async (req, res) => {
       return errorResponse(res, "Wallet not found", 404);
     }
 
-    const category = await assertCategoryForUser(userId, categoryId);
-    if (!category) {
+    const category = categoryId
+      ? await assertCategoryForUser(userId, categoryId)
+      : null;
+    if (categoryId && !category) {
       return errorResponse(res, "Category not found", 404);
     }
 
@@ -185,13 +187,15 @@ const createTransaction = async (req, res) => {
     const doc = await WalletTransaction.create({
       userId,
       walletId,
-      categoryId,
+      categoryId: category?._id ?? null,
       type,
       amount: amt,
       title: title.trim(),
       description: description ?? null,
       transactionDate: txDate,
-      categorySnapshot: { name: category.name },
+      categorySnapshot: category
+        ? { name: category.name, color: category.color, icon: category.icon }
+        : null,
       walletSnapshot: { walletName: wallet.walletName },
       createdBy: userId,
     });

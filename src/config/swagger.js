@@ -286,10 +286,15 @@ const options = {
         },
         CreateTransactionRequest: {
           type: "object",
-          required: ["walletId", "categoryId", "type", "amount", "title"],
+          required: ["walletId", "type", "amount", "title"],
           properties: {
             walletId: { type: "string" },
-            categoryId: { type: "string" },
+            categoryId: {
+              type: "string",
+              nullable: true,
+              description:
+                "Optional. If omitted, the transaction is created without a category.",
+            },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: { type: "number", example: 99.5 },
             title: { type: "string", example: "Salary" },
