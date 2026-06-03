@@ -229,12 +229,12 @@ const assertCanCreateReport = async (userId) => {
     return;
   }
 
-  const used = await countReportsThisMonth(userId);
-  if (used >= plan.monthlyReportLimit) {
-    const err = new Error(`Monthly report limit reached (${plan.monthlyReportLimit})`);
-    err.statusCode = 403;
-    throw err;
-  }
+  // const used = await countReportsThisMonth(userId);
+  // if (used >= plan.monthlyReportLimit) {
+  //   const err = new Error(`Monthly report limit reached (${plan.monthlyReportLimit})`);
+  //   err.statusCode = 403;
+  //   throw err;
+  // }
 };
 
 module.exports = {
