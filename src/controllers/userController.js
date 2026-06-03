@@ -4,6 +4,16 @@ const validator = require("validator");
 const User = require("../models/User");
 const Wallet = require("../models/Wallet");
 const TransactionCategory = require("../models/TransactionCategory");
+const WalletTransaction = require("../models/WalletTransaction");
+const WalletTransfer = require("../models/WalletTransfer");
+const PlannedPayment = require("../models/PlannedPayment");
+const Subscription = require("../models/Subscription");
+const Session = require("../models/Session");
+const OTP = require("../models/OTP");
+const Notification = require("../models/Notification");
+const Attachment = require("../models/Attachment");
+const Report = require("../models/Report");
+const AuditLog = require("../models/AuditLog");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { getEffectivePlanForUser } = require("../utils/planLimits");
 const { uploadProfileImageToDrive } = require("../utils/googleDrive");
@@ -162,8 +172,98 @@ const setDefaultWallet = async (req, res) => {
   }
 };
 
+const deleteMe = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const userId = req.user.userId;
+    const deletedAt = new Date();
+    const anonymizedEmail = `deleted-${userId}-${deletedAt.getTime()}@deleted.local`;
+
+    session.startTransaction();
+
+    const user = await User.findOneAndUpdate(
+      { _id: userId, isDeleted: false },
+      {
+        $set: {
+          fullName: "Deleted User",
+          email: anonymizedEmail,
+          mobileNumber: null,
+          profileImage: null,
+          authProviders: [],
+          selectedWallets: [],
+          selectedCategories: [],
+          defaultWalletId: null,
+          subscriptionId: null,
+          status: "DELETED",
+          isDeleted: true,
+          updatedAt: deletedAt,
+        },
+        $unset: {
+          passwordHash: "",
+          lastLoginAt: "",
+        },
+      },
+      { new: true, session },
+    );
+
+    if (!user) {
+      await session.abortTransaction();
+      return errorResponse(res, "User not found", 404);
+    }
+
+    const softDeleteUpdate = {
+      $set: {
+        isDeleted: true,
+        updatedAt: deletedAt,
+      },
+    };
+
+    await Wallet.updateMany({ userId, isDeleted: false }, softDeleteUpdate, {
+      session,
+    });
+    await TransactionCategory.updateMany(
+      { userId, isDeleted: false },
+      softDeleteUpdate,
+      { session },
+    );
+    await WalletTransaction.updateMany(
+      { userId, isDeleted: false },
+      softDeleteUpdate,
+      { session },
+    );
+    await PlannedPayment.updateMany(
+      { userId, isDeleted: false },
+      softDeleteUpdate,
+      { session },
+    );
+    await Subscription.updateMany(
+      { userId, status: "ACTIVE" },
+      { $set: { status: "CANCELLED" } },
+      { session },
+    );
+    await Session.deleteMany({ userId }, { session });
+    await OTP.deleteMany({ userId }, { session });
+    await WalletTransfer.deleteMany({ userId }, { session });
+    await Notification.deleteMany({ userId }, { session });
+    await Attachment.deleteMany({ userId }, { session });
+    await Report.deleteMany({ userId }, { session });
+    await AuditLog.deleteMany({ userId }, { session });
+
+    await session.commitTransaction();
+
+    return successResponse(res, "Account deleted successfully");
+  } catch (error) {
+    await session.abortTransaction();
+    return errorResponse(res, error.message);
+  } finally {
+    session.endSession();
+  }
+};
+
 module.exports = {
   getMe,
   updateMe,
   setDefaultWallet,
+  deleteMe,
 };

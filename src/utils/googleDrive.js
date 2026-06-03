@@ -72,6 +72,14 @@ const getDriveClient = () => {
 const handleDriveUploadError = (error, mode) => {
   const message = error?.message || "";
 
+  if (message === "invalid_grant" && mode === "oauth") {
+    const err = new Error(
+      "Google Drive OAuth refresh token is invalid or expired. Regenerate GOOGLE_DRIVE_REFRESH_TOKEN using the same OAuth client and Drive account.",
+    );
+    err.statusCode = 503;
+    throw err;
+  }
+
   if (message.includes("storage quota") && mode === "service_account") {
     const err = new Error(
       "Service accounts cannot upload to personal Google Drive folders. " +

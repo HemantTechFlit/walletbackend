@@ -7,12 +7,14 @@ const {
   getMe,
   updateMe,
   setDefaultWallet,
+  deleteMe,
 } = require("../controllers/userController");
 
 const router = express.Router();
 
 router.get("/me", authMiddleware, getMe);
 router.patch("/me", authMiddleware, optionalProfileUpload, updateMe);
+router.delete("/me", authMiddleware, deleteMe);
 router.post(
   "/me/default-wallet",
   authMiddleware,

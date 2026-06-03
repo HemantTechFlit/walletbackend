@@ -753,6 +753,19 @@ const options = {
             500: { description: "Server error" },
           },
         },
+        delete: {
+          tags: ["Users"],
+          summary: "Delete current user account",
+          description:
+            "Soft-deletes the user account, invalidates active sessions, anonymizes unique identity fields, and removes user-owned transient data.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            200: { description: "Account deleted" },
+            401: { description: "Unauthorized" },
+            404: { description: "User not found" },
+            500: { description: "Server error" },
+          },
+        },
       },
       "/api/users/me/default-wallet": {
         post: {
