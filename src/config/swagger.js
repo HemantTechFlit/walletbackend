@@ -447,7 +447,19 @@ const options = {
               enum: ["CSV", "PDF"],
               example: "CSV",
             },
-            filters: { type: "object", additionalProperties: true },
+            filters: {
+              type: "object",
+              additionalProperties: true,
+              properties: {
+                transactionType: {
+                  type: "string",
+                  enum: ["income", "expense", "INCOME", "EXPENSE"],
+                  description: "Filters transactions by type. Alias: type.",
+                },
+                categoryId: { type: "string" },
+              },
+              example: { transactionType: "income" },
+            },
           },
         },
         SubscribeRequest: {

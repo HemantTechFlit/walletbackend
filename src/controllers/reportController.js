@@ -14,8 +14,35 @@ const { uploadReportToDrive } = require("../utils/googleDrive");
 const STORAGE_DIR = path.join(__dirname, "..", "..", "storage", "reports");
 
 const SUPPORTED_REPORT_TYPES = ["CSV", "PDF"];
+const SUPPORTED_TRANSACTION_TYPES = ["INCOME", "EXPENSE"];
 
 const normalizeReportType = (value) => String(value || "CSV").trim().toUpperCase();
+
+const normalizeTransactionType = (value) =>
+  String(value || "").trim().toUpperCase();
+
+const applyTransactionFilters = (txFilter, filters) => {
+  const transactionType = filters.transactionType ?? filters.type;
+
+  if (transactionType !== undefined) {
+    const normalizedType = normalizeTransactionType(transactionType);
+    if (!SUPPORTED_TRANSACTION_TYPES.includes(normalizedType)) {
+      const err = new Error("filters.transactionType must be income or expense");
+      err.statusCode = 400;
+      throw err;
+    }
+    txFilter.type = normalizedType;
+  }
+
+  if (filters.categoryId !== undefined) {
+    if (!mongoose.isValidObjectId(filters.categoryId)) {
+      const err = new Error("filters.categoryId must be a valid category id");
+      err.statusCode = 400;
+      throw err;
+    }
+    txFilter.categoryId = filters.categoryId;
+  }
+};
 
 const createReport = async (req, res) => {
   try {
@@ -42,9 +69,14 @@ const createReport = async (req, res) => {
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
       return errorResponse(res, "Invalid date range", 400);
     }
+    to.setHours(23, 59, 59, 999);
 
     if (to < from) {
       return errorResponse(res, "toDate must be after fromDate", 400);
+    }
+
+    if (!filters || typeof filters !== "object" || Array.isArray(filters)) {
+      return errorResponse(res, "filters must be an object", 400);
     }
 
     if (!Array.isArray(walletIds)) {
@@ -79,6 +111,8 @@ const createReport = async (req, res) => {
     if (walletIds.length > 0) {
       txFilter.walletId = { $in: walletIds };
     }
+
+    applyTransactionFilters(txFilter, filters);
 
     const rows = await WalletTransaction.find(txFilter)
       .sort({ transactionDate: -1 })
