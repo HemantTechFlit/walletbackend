@@ -218,7 +218,7 @@ const options = {
         UpdateUserMultipartRequest: {
           type: "object",
           description:
-            "multipart/form-data. Image is uploaded to Google Drive and the link is saved on the user.",
+            "multipart/form-data. Image is uploaded to Cloudflare R2 and the link is saved on the user.",
           properties: {
             fullName: { type: "string", example: "Hemant Kumar" },
             mobileNumber: { type: "string", example: "9876543210" },
@@ -329,6 +329,33 @@ const options = {
             },
           },
         },
+        CreateTransactionMultipartRequest: {
+          type: "object",
+          required: ["walletId", "type", "amount", "title"],
+          properties: {
+            walletId: { type: "string" },
+            categoryId: {
+              type: "string",
+              nullable: true,
+              description:
+                "Optional. If omitted, the transaction is created without a category.",
+            },
+            type: { type: "string", enum: ["INCOME", "EXPENSE"] },
+            amount: { type: "number", example: 99.5 },
+            title: { type: "string", example: "Restaurant bill" },
+            description: { type: "string", nullable: true },
+            transactionDate: {
+              type: "string",
+              format: "date-time",
+              description: "Defaults to now if omitted",
+            },
+            receipt: {
+              type: "string",
+              format: "binary",
+              description: "Receipt image or PDF file, max 10MB",
+            },
+          },
+        },
         UpdateTransactionRequest: {
           type: "object",
           properties: {
@@ -341,6 +368,35 @@ const options = {
             transactionDate: {
               type: "string",
               format: "date-time",
+            },
+            removeReceipt: {
+              type: "boolean",
+              description: "Set true to unlink the current receipt",
+            },
+          },
+        },
+        UpdateTransactionMultipartRequest: {
+          type: "object",
+          properties: {
+            walletId: { type: "string" },
+            categoryId: { type: "string" },
+            type: { type: "string", enum: ["INCOME", "EXPENSE"] },
+            amount: { type: "number", example: 99.5 },
+            title: { type: "string", example: "Restaurant bill" },
+            description: { type: "string", nullable: true },
+            transactionDate: {
+              type: "string",
+              format: "date-time",
+            },
+            removeReceipt: {
+              type: "string",
+              example: "false",
+              description: "Set true to unlink the current receipt",
+            },
+            receipt: {
+              type: "string",
+              format: "binary",
+              description: "Replacement receipt image or PDF file, max 10MB",
             },
           },
         },
@@ -444,7 +500,7 @@ const options = {
             toDate: { type: "string", format: "date-time" },
             reportType: {
               type: "string",
-              enum: ["CSV", "PDF"],
+              enum: ["CSV", "PDF", "RECEIPTS_CSV"],
               example: "CSV",
             },
             filters: {
@@ -740,7 +796,7 @@ const options = {
           tags: ["Users"],
           summary: "Update current user profile (multipart for profile photo)",
           description:
-            "Send **multipart/form-data** with field `profileImage` (file) to upload to [Google Drive folder](https://drive.google.com/drive/folders/1OeeD4_4X1iGSMLRNGSB5WeDjIzhchK89). Requires OAuth env vars (`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN`) for personal Gmail folders — service accounts cannot use My Drive storage. Text fields can be sent as form fields in the same request.",
+            "Send **multipart/form-data** with field `profileImage` (file) to upload to Cloudflare R2. Text fields can be sent as form fields in the same request.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -756,12 +812,10 @@ const options = {
             },
           },
           responses: {
-            200: {
-              description: "Profile updated; profileImage is Google Drive URL",
-            },
+            200: { description: "Profile updated; profileImage is an R2 URL" },
             400: { description: "Validation failed or invalid image" },
             401: { description: "Unauthorized" },
-            503: { description: "Google Drive not configured" },
+            503: { description: "Cloudflare R2 not configured" },
             500: { description: "Server error" },
           },
         },
@@ -1040,11 +1094,16 @@ const options = {
         },
         post: {
           tags: ["Transactions"],
-          summary: "Create transaction",
+          summary: "Create transaction, optionally with receipt",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
             content: {
+              "multipart/form-data": {
+                schema: {
+                  $ref: "#/components/schemas/CreateTransactionMultipartRequest",
+                },
+              },
               "application/json": {
                 schema: {
                   $ref: "#/components/schemas/CreateTransactionRequest",
@@ -1085,7 +1144,7 @@ const options = {
         },
         patch: {
           tags: ["Transactions"],
-          summary: "Update transaction",
+          summary: "Update transaction, optionally replacing receipt",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -1098,6 +1157,11 @@ const options = {
           requestBody: {
             required: true,
             content: {
+              "multipart/form-data": {
+                schema: {
+                  $ref: "#/components/schemas/UpdateTransactionMultipartRequest",
+                },
+              },
               "application/json": {
                 schema: {
                   $ref: "#/components/schemas/UpdateTransactionRequest",
@@ -1365,7 +1429,7 @@ const options = {
         },
         post: {
           tags: ["Reports"],
-          summary: "Generate CSV or PDF report (uploaded to Google Drive)",
+          summary: "Generate CSV, PDF, or receipt-only CSV report",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -1378,7 +1442,7 @@ const options = {
           responses: {
             201: {
               description:
-                "Report created; data.fileUrl is a public Google Drive download link",
+                "Report created; data.fileUrl is the generated report link",
             },
             400: { description: "Invalid body" },
             401: { description: "Unauthorized" },

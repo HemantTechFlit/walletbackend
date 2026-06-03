@@ -21,6 +21,7 @@ const buildCsv = (rows) => {
     "title",
     "description",
     "transactionDate",
+    "receiptUrl",
   ];
   const lines = [header.join(",")];
   for (const row of rows) {
@@ -34,15 +35,59 @@ const buildCsv = (rows) => {
         escapeCsv(row.title),
         escapeCsv(row.description),
         escapeCsv(row.transactionDate?.toISOString?.() ?? row.transactionDate),
+        escapeCsv(row.receipt?.fileUrl),
       ].join(","),
     );
   }
   return lines.join("\n");
 };
 
+const buildReceiptsCsv = (rows) => {
+  const header = [
+    "transactionId",
+    "walletId",
+    "categoryId",
+    "type",
+    "amount",
+    "title",
+    "transactionDate",
+    "receiptFileName",
+    "receiptFileType",
+    "receiptUrl",
+  ];
+  const lines = [header.join(",")];
+
+  for (const row of rows) {
+    if (!row.receipt?.fileUrl) {
+      continue;
+    }
+
+    lines.push(
+      [
+        escapeCsv(row._id),
+        escapeCsv(row.walletId),
+        escapeCsv(row.categoryId),
+        escapeCsv(row.type),
+        escapeCsv(row.amount),
+        escapeCsv(row.title),
+        escapeCsv(row.transactionDate?.toISOString?.() ?? row.transactionDate),
+        escapeCsv(row.receipt.originalName),
+        escapeCsv(row.receipt.fileType),
+        escapeCsv(row.receipt.fileUrl),
+      ].join(","),
+    );
+  }
+
+  return lines.join("\n");
+};
+
 const buildPdfBuffer = (rows, { fromDate, toDate }) =>
   new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 40, size: "A4" });
+    const doc = new PDFDocument({
+      margin: 30,
+      size: "A4",
+      layout: "landscape",
+    });
     const chunks = [];
 
     doc.on("data", (chunk) => chunks.push(chunk));
@@ -67,25 +112,37 @@ const buildPdfBuffer = (rows, { fromDate, toDate }) =>
       return;
     }
 
-    const colWidths = [70, 55, 55, 50, 120, 80];
-    const headers = ["Date", "Type", "Amount", "Title", "Wallet", "Category"];
-    let y = doc.y;
+    const colWidths = [62, 58, 55, 100, 85, 85, 330];
+    const headers = [
+      "Date",
+      "Type",
+      "Amount",
+      "Title",
+      "Wallet",
+      "Category",
+      "Receipt",
+    ];
+    const startX = 30;
+    const bottomY = doc.page.height - 30;
 
-    doc.font("Helvetica-Bold").fontSize(9);
-    headers.forEach((label, i) => {
-      const x = 40 + colWidths.slice(0, i).reduce((a, b) => a + b, 0);
-      doc.text(label, x, y, { width: colWidths[i], continued: false });
-    });
+    const getX = (index) =>
+      startX + colWidths.slice(0, index).reduce((a, b) => a + b, 0);
 
-    y += 16;
-    doc.font("Helvetica").fontSize(8);
+    const drawHeader = () => {
+      const headerY = doc.y;
+      doc.font("Helvetica-Bold").fontSize(8).fillColor("#000000");
+      headers.forEach((label, i) => {
+        doc.text(label, getX(i), headerY, {
+          width: colWidths[i],
+          continued: false,
+        });
+      });
+      return headerY + 16;
+    };
+
+    let y = drawHeader();
 
     for (const row of rows) {
-      if (y > 750) {
-        doc.addPage();
-        y = 40;
-      }
-
       const dateStr =
         row.transactionDate?.toISOString?.().slice(0, 10) ??
         String(row.transactionDate ?? "");
@@ -96,14 +153,41 @@ const buildPdfBuffer = (rows, { fromDate, toDate }) =>
         (row.title ?? "").slice(0, 28),
         row.walletSnapshot?.walletName ?? "",
         row.categorySnapshot?.name ?? "",
+        row.receipt?.fileUrl ?? "",
       ];
 
+      doc.font("Helvetica").fontSize(7);
+      const rowHeight =
+        Math.max(
+          ...cells.map((cell, i) =>
+            doc.heightOfString(String(cell), {
+              width: colWidths[i],
+            }),
+          ),
+          10,
+        ) + 6;
+
+      if (y + rowHeight > bottomY) {
+        doc.addPage();
+        y = drawHeader();
+      }
+
       cells.forEach((cell, i) => {
-        const x = 40 + colWidths.slice(0, i).reduce((a, b) => a + b, 0);
-        doc.text(String(cell), x, y, { width: colWidths[i], continued: false });
+        const x = getX(i);
+        const options = { width: colWidths[i], continued: false };
+        if (i === 6 && row.receipt?.fileUrl) {
+          doc
+            .fillColor("#1a5fb4")
+            .fontSize(6.5)
+            .text(String(cell), x, y, { ...options, link: row.receipt.fileUrl })
+            .fillColor("#000000");
+          return;
+        }
+        doc.fontSize(7);
+        doc.text(String(cell), x, y, options);
       });
 
-      y += 14;
+      y += rowHeight;
     }
 
     doc.end();
@@ -111,5 +195,6 @@ const buildPdfBuffer = (rows, { fromDate, toDate }) =>
 
 module.exports = {
   buildCsv,
+  buildReceiptsCsv,
   buildPdfBuffer,
 };

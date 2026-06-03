@@ -17,7 +17,7 @@ const reportSchema = new mongoose.Schema(
 
     reportType: {
       type: String,
-      enum: ["PDF", "CSV"],
+      enum: ["PDF", "CSV", "RECEIPTS_CSV"],
       required: true,
     },
 

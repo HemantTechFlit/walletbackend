@@ -72,6 +72,38 @@ const walletTransactionSchema = new mongoose.Schema(
       walletColor: String,
     },
 
+    receipt: {
+      attachmentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Attachment",
+        default: null,
+      },
+      fileUrl: {
+        type: String,
+        default: null,
+      },
+      storageKey: {
+        type: String,
+        default: null,
+      },
+      originalName: {
+        type: String,
+        default: null,
+      },
+      fileType: {
+        type: String,
+        default: null,
+      },
+      fileSize: {
+        type: Number,
+        default: null,
+      },
+      uploadedAt: {
+        type: Date,
+        default: null,
+      },
+    },
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

@@ -14,6 +14,16 @@ const attachmentSchema = new mongoose.Schema(
       required: true,
     },
 
+    storageKey: {
+      type: String,
+      default: null,
+    },
+
+    originalName: {
+      type: String,
+      default: null,
+    },
+
     fileType: {
       type: String,
       required: true,
@@ -22,6 +32,20 @@ const attachmentSchema = new mongoose.Schema(
     fileSize: {
       type: Number,
       required: true,
+    },
+
+    purpose: {
+      type: String,
+      enum: ["RECEIPT", "PROFILE", "REPORT", "OTHER"],
+      default: "OTHER",
+      index: true,
+    },
+
+    transactionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "WalletTransaction",
+      default: null,
+      index: true,
     },
 
     uploadedAt: {

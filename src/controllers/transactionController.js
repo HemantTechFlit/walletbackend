@@ -3,7 +3,9 @@ const mongoose = require("mongoose");
 const WalletTransaction = require("../models/WalletTransaction");
 const Wallet = require("../models/Wallet");
 const TransactionCategory = require("../models/TransactionCategory");
+const Attachment = require("../models/Attachment");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
+const { uploadReceipt } = require("../utils/r2Storage");
 const {
   aggregateBalancesByWalletIds,
   assertSufficientWalletBalance,
@@ -32,6 +34,40 @@ const assertCategoryForUser = async (userId, categoryId) =>
     userId,
     isDeleted: false,
   });
+
+const createReceiptAttachment = async ({ userId, transactionId, file }) => {
+  if (!file) {
+    return null;
+  }
+
+  const uploaded = await uploadReceipt({
+    buffer: file.buffer,
+    mimeType: file.mimetype,
+    originalName: file.originalname,
+    userId,
+  });
+
+  const attachment = await Attachment.create({
+    userId,
+    transactionId,
+    fileUrl: uploaded.url,
+    storageKey: uploaded.key,
+    originalName: file.originalname,
+    fileType: file.mimetype,
+    fileSize: file.size,
+    purpose: "RECEIPT",
+  });
+
+  return {
+    attachmentId: attachment._id,
+    fileUrl: attachment.fileUrl,
+    storageKey: attachment.storageKey,
+    originalName: attachment.originalName,
+    fileType: attachment.fileType,
+    fileSize: attachment.fileSize,
+    uploadedAt: attachment.uploadedAt,
+  };
+};
 
 const listTransactions = async (req, res) => {
   try {
@@ -99,7 +135,7 @@ const listTransactions = async (req, res) => {
       },
     });
   } catch (error) {
-    return errorResponse(res, error.message);
+    return errorResponse(res, error.message, error.statusCode || 500);
   }
 };
 
@@ -200,6 +236,17 @@ const createTransaction = async (req, res) => {
       createdBy: userId,
     });
 
+    const receipt = await createReceiptAttachment({
+      userId,
+      transactionId: doc._id,
+      file: req.file,
+    });
+
+    if (receipt) {
+      doc.receipt = receipt;
+      await doc.save();
+    }
+
     const populated = await WalletTransaction.findById(doc._id)
       .populate("walletId", "walletName")
       .populate("categoryId", "name");
@@ -271,6 +318,7 @@ const updateTransaction = async (req, res) => {
       title,
       description,
       transactionDate,
+      removeReceipt,
     } = req.body;
 
     if (!mongoose.isValidObjectId(id)) {
@@ -326,14 +374,14 @@ const updateTransaction = async (req, res) => {
 
     const [wallet, category] = await Promise.all([
       assertOwnWallet(userId, nextWalletId),
-      assertCategoryForUser(userId, nextCategoryId),
+      nextCategoryId ? assertCategoryForUser(userId, nextCategoryId) : null,
     ]);
 
     if (!wallet) {
       return errorResponse(res, "Wallet not found", 404);
     }
 
-    if (!category) {
+    if (nextCategoryId && !category) {
       return errorResponse(res, "Category not found", 404);
     }
 
@@ -364,10 +412,28 @@ const updateTransaction = async (req, res) => {
       transaction.transactionDate = parsedTransactionDate;
     }
 
+    if (removeReceipt === true || removeReceipt === "true") {
+      transaction.set("receipt", undefined);
+      await Attachment.updateMany(
+        { transactionId: transaction._id, userId, purpose: "RECEIPT" },
+        { $set: { transactionId: null } },
+      );
+    }
+
+    const receipt = await createReceiptAttachment({
+      userId,
+      transactionId: transaction._id,
+      file: req.file,
+    });
+
+    if (receipt) {
+      transaction.receipt = receipt;
+    }
+
     transaction.categorySnapshot = {
-      name: category.name,
-      color: category.color,
-      icon: category.icon,
+      name: category?.name,
+      color: category?.color,
+      icon: category?.icon,
     };
     transaction.walletSnapshot = {
       walletName: wallet.walletName,
@@ -383,7 +449,7 @@ const updateTransaction = async (req, res) => {
 
     return successResponse(res, "Transaction updated successfully", populated);
   } catch (error) {
-    return errorResponse(res, error.message);
+    return errorResponse(res, error.message, error.statusCode || 500);
   }
 };
 

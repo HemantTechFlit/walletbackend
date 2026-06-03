@@ -16,7 +16,7 @@ const Report = require("../models/Report");
 const AuditLog = require("../models/AuditLog");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { getEffectivePlanForUser } = require("../utils/planLimits");
-const { uploadProfileImageToDrive } = require("../utils/googleDrive");
+const { uploadProfileImage } = require("../utils/r2Storage");
 
 const syncUserSelectionsFromDb = async (userId) => {
   const [wallets, categories] = await Promise.all([
@@ -106,13 +106,13 @@ const updateMe = async (req, res) => {
     }
 
     if (req.file) {
-      const driveUrl = await uploadProfileImageToDrive({
+      const fileUrl = await uploadProfileImage({
         buffer: req.file.buffer,
         mimeType: req.file.mimetype,
         originalName: req.file.originalname,
         userId,
       });
-      updates.profileImage = driveUrl;
+      updates.profileImage = fileUrl;
     } else if (
       removeProfileImage === true ||
       removeProfileImage === "true"
@@ -137,7 +137,7 @@ const updateMe = async (req, res) => {
 
     return successResponse(res, "Profile updated successfully", user);
   } catch (error) {
-    const code = error.message?.includes("Google Drive") ? 503 : 500;
+    const code = error.statusCode || 500;
     return errorResponse(res, error.message, code);
   }
 };

@@ -8,12 +8,16 @@ const Wallet = require("../models/Wallet");
 const WalletTransaction = require("../models/WalletTransaction");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { assertCanCreateReport } = require("../utils/planLimits");
-const { buildCsv, buildPdfBuffer } = require("../utils/reportExport");
-const { uploadReportToDrive } = require("../utils/googleDrive");
+const {
+  buildCsv,
+  buildPdfBuffer,
+  buildReceiptsCsv,
+} = require("../utils/reportExport");
+const { uploadReport } = require("../utils/r2Storage");
 
 const STORAGE_DIR = path.join(__dirname, "..", "..", "storage", "reports");
 
-const SUPPORTED_REPORT_TYPES = ["CSV", "PDF"];
+const SUPPORTED_REPORT_TYPES = ["CSV", "PDF", "RECEIPTS_CSV"];
 const SUPPORTED_TRANSACTION_TYPES = ["INCOME", "EXPENSE"];
 
 const normalizeReportType = (value) => String(value || "CSV").trim().toUpperCase();
@@ -55,7 +59,7 @@ const createReport = async (req, res) => {
     if (!SUPPORTED_REPORT_TYPES.includes(type)) {
       return errorResponse(
         res,
-        "reportType must be CSV or PDF",
+        "reportType must be CSV, PDF, or RECEIPTS_CSV",
         400,
       );
     }
@@ -126,6 +130,10 @@ const createReport = async (req, res) => {
       buffer = await buildPdfBuffer(rows, { fromDate: from, toDate: to });
       mimeType = "application/pdf";
       extension = "pdf";
+    } else if (type === "RECEIPTS_CSV") {
+      buffer = Buffer.from(buildReceiptsCsv(rows), "utf8");
+      mimeType = "text/csv";
+      extension = "csv";
     } else {
       buffer = Buffer.from(buildCsv(rows), "utf8");
       mimeType = "text/csv";
@@ -133,10 +141,11 @@ const createReport = async (req, res) => {
     }
 
     const fileName = `report-${userId}-${Date.now()}.${extension}`;
-    const fileUrl = await uploadReportToDrive({
+    const fileUrl = await uploadReport({
       buffer,
       mimeType,
       fileName,
+      userId,
     });
 
     const report = await Report.create({
