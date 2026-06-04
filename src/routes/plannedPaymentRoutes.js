@@ -4,6 +4,7 @@ const authMiddleware = require("../middlewares/authMiddleware");
 const requireOnboarding = require("../middlewares/requireOnboarding");
 const {
   createPlannedPayment,
+  deletePlannedPayment,
   listPlannedPaymentOccurrences,
   listPlannedPaymentDecisions,
   decidePlannedPaymentOccurrence,
@@ -14,6 +15,7 @@ const router = express.Router();
 router.use(authMiddleware, requireOnboarding);
 
 router.post("/", createPlannedPayment);
+router.delete("/:id", deletePlannedPayment);
 router.get("/occurrences", listPlannedPaymentOccurrences);
 router.get("/occurrences/decisions", listPlannedPaymentDecisions);
 router.post("/:id/occurrences/decision", decidePlannedPaymentOccurrence);

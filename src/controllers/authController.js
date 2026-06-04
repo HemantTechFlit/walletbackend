@@ -356,14 +356,15 @@ const upsertSocialUser = async ({ provider, claims, fullName, currency }) => {
   };
 
   if (user) {
-    const alreadyLinked = (user.authProviders || []).some(
+    const existingProviderEntry = (user.authProviders || []).find(
       (entry) =>
         entry.provider === provider && entry.providerUserId === providerUserId,
     );
 
-    if (!alreadyLinked) {
-      user.authProviders = [...(user.authProviders || []), providerEntry];
-    }
+    user.authProviders = [
+      ...(user.authProviders || []).filter((entry) => entry.provider !== provider),
+      existingProviderEntry || providerEntry,
+    ];
 
     return user;
   }

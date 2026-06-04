@@ -59,6 +59,38 @@ const walletTransferSchema = new mongoose.Schema(
       index: true,
     },
 
+    receipt: {
+      attachmentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Attachment",
+        default: null,
+      },
+      fileUrl: {
+        type: String,
+        default: null,
+      },
+      storageKey: {
+        type: String,
+        default: null,
+      },
+      originalName: {
+        type: String,
+        default: null,
+      },
+      fileType: {
+        type: String,
+        default: null,
+      },
+      fileSize: {
+        type: Number,
+        default: null,
+      },
+      uploadedAt: {
+        type: Date,
+        default: null,
+      },
+    },
+
     createdAt: {
       type: Date,
       default: Date.now,

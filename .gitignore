@@ -36,6 +36,8 @@ uploads/
 # Google service account keys
 config/google-service-account.json
 google-service-account.json
+config/firebase-service-account.json
+firebase-service-account.json
 
 # generated files
 *.tgz

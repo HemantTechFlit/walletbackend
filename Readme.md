@@ -39,6 +39,23 @@ This project is designed with:
 - JWT Authentication
 - Refresh Token Flow
 - Session Management
+- Google and Apple sign-in through Firebase Auth
+
+For Google or Apple sign-in, the mobile app should authenticate with Firebase
+Auth first, then send the Firebase ID token to `POST /api/auth/google` or
+`POST /api/auth/apple` as `idToken`. The backend verifies only Firebase-issued
+tokens with the Firebase Admin SDK.
+
+Configure Firebase Admin with your Firebase project service account:
+
+```env
+FIREBASE_PROJECT_ID=driver-wallet-d39d8
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+```
+
+You can also use `FIREBASE_SERVICE_ACCOUNT_BASE64` or
+`FIREBASE_SERVICE_ACCOUNT_FILE=./config/firebase-service-account.json` instead
+of raw JSON.
 
 ---
 

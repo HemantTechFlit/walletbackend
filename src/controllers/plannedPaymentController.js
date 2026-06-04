@@ -337,6 +337,40 @@ const createPlannedPayment = async (req, res) => {
   }
 };
 
+const deletePlannedPayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return errorResponse(res, "Invalid planned payment id", 400);
+    }
+
+    const plannedPayment = await PlannedPayment.findOneAndUpdate(
+      {
+        _id: id,
+        userId: req.user.userId,
+        isDeleted: false,
+      },
+      {
+        $set: {
+          isDeleted: true,
+          status: "CANCELLED",
+          updatedAt: new Date(),
+        },
+      },
+      { new: true },
+    );
+
+    if (!plannedPayment) {
+      return errorResponse(res, "Planned payment not found", 404);
+    }
+
+    return successResponse(res, "Planned payment deleted successfully");
+  } catch (error) {
+    return errorResponse(res, error.message);
+  }
+};
+
 const listPlannedPaymentOccurrences = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -640,6 +674,7 @@ const decidePlannedPaymentOccurrence = async (req, res) => {
 
 module.exports = {
   createPlannedPayment,
+  deletePlannedPayment,
   listPlannedPaymentOccurrences,
   listPlannedPaymentDecisions,
   decidePlannedPaymentOccurrence,

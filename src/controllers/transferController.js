@@ -5,7 +5,9 @@ const WalletTransaction = require("../models/WalletTransaction");
 const Wallet = require("../models/Wallet");
 const User = require("../models/User");
 const TransactionCategory = require("../models/TransactionCategory");
+const Attachment = require("../models/Attachment");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
+const { uploadReceipt } = require("../utils/r2Storage");
 const { assertSufficientWalletBalance } = require("../utils/walletBalance");
 
 const TRANSFER_CATEGORY_NAME = "Wallet transfer";
@@ -41,6 +43,47 @@ const getOrCreateTransferCategory = async (userId, session) => {
 
 const assertOwnWallet = (userId, walletId, session) =>
   Wallet.findOne({ _id: walletId, userId, isDeleted: false }).session(session);
+
+const createReceiptAttachment = async ({ userId, transactionId, file, session }) => {
+  if (!file) {
+    return null;
+  }
+
+  const uploaded = await uploadReceipt({
+    buffer: file.buffer,
+    mimeType: file.mimetype,
+    originalName: file.originalname,
+    userId,
+  });
+
+  const attachments = await Attachment.create(
+    [
+      {
+        userId,
+        transactionId,
+        fileUrl: uploaded.url,
+        storageKey: uploaded.key,
+        originalName: file.originalname,
+        fileType: file.mimetype,
+        fileSize: file.size,
+        purpose: "RECEIPT",
+      },
+    ],
+    { session },
+  );
+
+  const attachment = attachments[0];
+
+  return {
+    attachmentId: attachment._id,
+    fileUrl: attachment.fileUrl,
+    storageKey: attachment.storageKey,
+    originalName: attachment.originalName,
+    fileType: attachment.fileType,
+    fileSize: attachment.fileSize,
+    uploadedAt: attachment.uploadedAt,
+  };
+};
 
 const listTransfers = async (req, res) => {
   try {
@@ -180,6 +223,25 @@ const createTransfer = async (req, res) => {
     const transferDoc = transfer[0];
     transferDoc.debitTransactionId = debitTx[0]._id;
     transferDoc.creditTransactionId = creditTx[0]._id;
+
+    const receipt = await createReceiptAttachment({
+      userId,
+      transactionId: debitTx[0]._id,
+      file: req.file,
+      session,
+    });
+
+    if (receipt) {
+      debitTx[0].receipt = receipt;
+      creditTx[0].receipt = receipt;
+      transferDoc.receipt = receipt;
+
+      await Promise.all([
+        debitTx[0].save({ session }),
+        creditTx[0].save({ session }),
+      ]);
+    }
+
     await transferDoc.save({ session });
 
     await session.commitTransaction();
