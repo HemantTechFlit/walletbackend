@@ -11,21 +11,30 @@ const options = {
     },
     servers: [
       {
-        url: "http://localhost:3000",
-        description: "Local development server",
+        url: "https://expense-tracker-ip37.onrender.com",
+        description: "Expense Tracker API production server",
       },
     ],
     tags: [
       { name: "Auth", description: "Authentication APIs" },
       { name: "Onboarding", description: "Onboarding APIs" },
       { name: "Users", description: "Current user profile and preferences" },
-      { name: "Wallets", description: "User wallets (requires completed onboarding)" },
+      {
+        name: "Wallets",
+        description: "User wallets (requires completed onboarding)",
+      },
       { name: "Categories", description: "Transaction categories" },
       { name: "Transactions", description: "Income and expense entries" },
-      { name: "Planned Payments", description: "Manual planned income/expense reminders" },
+      {
+        name: "Planned Payments",
+        description: "Manual planned income/expense reminders",
+      },
       { name: "Transfers", description: "Wallet-to-wallet transfers" },
       { name: "Voice", description: "AI-assisted voice transaction drafts" },
-      { name: "Reports", description: "CSV/PDF reports uploaded to Google Drive" },
+      {
+        name: "Reports",
+        description: "CSV/PDF reports uploaded to Google Drive",
+      },
       {
         name: "Subscriptions",
         description: "User subscription and effective plan",
@@ -103,7 +112,8 @@ const options = {
             },
             currency: {
               type: "string",
-              description: "Optional ISO 4217 currency code for first-time social users.",
+              description:
+                "Optional ISO 4217 currency code for first-time social users.",
               example: "USD",
             },
           },
@@ -200,7 +210,8 @@ const options = {
             },
             removeProfileImage: {
               type: "boolean",
-              description: "Set true to clear profileImage (multipart form field)",
+              description:
+                "Set true to clear profileImage (multipart form field)",
             },
           },
         },
@@ -215,7 +226,8 @@ const options = {
             profileImage: {
               type: "string",
               format: "binary",
-              description: "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
+              description:
+                "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
             },
             removeProfileImage: {
               type: "string",
@@ -297,18 +309,14 @@ const options = {
         },
         CreateTransactionRequest: {
           type: "object",
-          required: [
-            "walletId",
-            "type",
-            "amount",
-            "title",
-          ],
+          required: ["walletId", "type", "amount", "title"],
           properties: {
             walletId: { type: "string" },
             categoryId: {
               type: "string",
               nullable: true,
-              description: "Optional. If omitted, the transaction is created without a category.",
+              description:
+                "Optional. If omitted, the transaction is created without a category.",
             },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: { type: "number", example: 99.5 },
@@ -329,7 +337,8 @@ const options = {
             categoryId: {
               type: "string",
               nullable: true,
-              description: "Optional. If omitted, the transaction is created without a category.",
+              description:
+                "Optional. If omitted, the transaction is created without a category.",
             },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: { type: "number", example: 99.5 },
@@ -518,8 +527,7 @@ const options = {
                 transactionType: {
                   type: "string",
                   enum: ["income", "expense", "INCOME", "EXPENSE"],
-                  description:
-                    "Filters transactions by type. Alias: type.",
+                  description: "Filters transactions by type. Alias: type.",
                 },
                 categoryId: { type: "string" },
               },
@@ -615,7 +623,9 @@ const options = {
           },
           responses: {
             200: { description: "Apple login successful with tokens" },
-            400: { description: "Invalid token, missing email, or configuration" },
+            400: {
+              description: "Invalid token, missing email, or configuration",
+            },
             403: { description: "User is not active" },
             500: { description: "Server error" },
           },
@@ -849,7 +859,9 @@ const options = {
             required: true,
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/SetDefaultWalletRequest" },
+                schema: {
+                  $ref: "#/components/schemas/SetDefaultWalletRequest",
+                },
               },
             },
           },
@@ -1233,7 +1245,8 @@ const options = {
         delete: {
           tags: ["Planned Payments"],
           summary: "Delete planned payment",
-          description: "Soft-deletes a planned payment owned by the authenticated user.",
+          description:
+            "Soft-deletes a planned payment owned by the authenticated user.",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -1349,7 +1362,9 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            404: { description: "Planned payment, wallet, or category not found" },
+            404: {
+              description: "Planned payment, wallet, or category not found",
+            },
             500: { description: "Server error" },
           },
         },
@@ -1408,7 +1423,8 @@ const options = {
       "/api/voice/transaction-draft": {
         post: {
           tags: ["Voice"],
-          summary: "Generate an AI transaction or transfer draft from transcript text",
+          summary:
+            "Generate an AI transaction or transfer draft from transcript text",
           description:
             "Returns a confirmation draft only. The frontend should let the user confirm or edit it, then call the existing transaction or transfer create API.",
           security: [{ bearerAuth: [] }],
@@ -1427,7 +1443,9 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            503: { description: "Local or self-hosted voice model unavailable" },
+            503: {
+              description: "Local or self-hosted voice model unavailable",
+            },
             500: { description: "Server error" },
           },
         },
@@ -1542,7 +1560,7 @@ const options = {
       },
     },
   },
-  apis: [],
+  apis: ["../routes/*.js"],
 };
 
 const swaggerSpec = swaggerJsdoc(options);
