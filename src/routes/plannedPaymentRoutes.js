@@ -4,7 +4,9 @@ const authMiddleware = require("../middlewares/authMiddleware");
 const requireOnboarding = require("../middlewares/requireOnboarding");
 const {
   createPlannedPayment,
+  updatePlannedPayment,
   deletePlannedPayment,
+  deletePlannedPaymentOccurrence,
   listPlannedPaymentOccurrences,
   listPlannedPaymentDecisions,
   decidePlannedPaymentOccurrence,
@@ -15,9 +17,11 @@ const router = express.Router();
 router.use(authMiddleware, requireOnboarding);
 
 router.post("/", createPlannedPayment);
-router.delete("/:id", deletePlannedPayment);
 router.get("/occurrences", listPlannedPaymentOccurrences);
 router.get("/occurrences/decisions", listPlannedPaymentDecisions);
+router.delete("/:id/occurrences", deletePlannedPaymentOccurrence);
 router.post("/:id/occurrences/decision", decidePlannedPaymentOccurrence);
+router.patch("/:id", updatePlannedPayment);
+router.delete("/:id", deletePlannedPayment);
 
 module.exports = router;

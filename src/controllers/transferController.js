@@ -8,7 +8,10 @@ const TransactionCategory = require("../models/TransactionCategory");
 const Attachment = require("../models/Attachment");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { uploadReceipt } = require("../utils/r2Storage");
-const { assertSufficientWalletBalance } = require("../utils/walletBalance");
+const {
+  aggregateBalancesByWalletIds,
+  assertSufficientWalletBalance,
+} = require("../utils/walletBalance");
 
 const TRANSFER_CATEGORY_NAME = "Wallet transfer";
 
@@ -261,7 +264,249 @@ const createTransfer = async (req, res) => {
   }
 };
 
+const assertWalletBalancesAfterTransferUpdate = async (
+  userId,
+  existingTransfer,
+  nextTransfer,
+) => {
+  const walletIds = [
+    existingTransfer.fromWalletId.toString(),
+    existingTransfer.toWalletId.toString(),
+    nextTransfer.fromWalletId.toString(),
+    nextTransfer.toWalletId.toString(),
+  ];
+  const uniqueWalletIds = [...new Set(walletIds)];
+  const balanceMap = await aggregateBalancesByWalletIds(userId, uniqueWalletIds);
+
+  const projectedBalances = new Map(
+    uniqueWalletIds.map((walletId) => [
+      walletId,
+      balanceMap.get(walletId)?.balance ?? 0,
+    ]),
+  );
+
+  const addToWallet = (walletId, amount) => {
+    const key = walletId.toString();
+    projectedBalances.set(key, (projectedBalances.get(key) ?? 0) + amount);
+  };
+
+  addToWallet(existingTransfer.fromWalletId, Number(existingTransfer.amount));
+  addToWallet(existingTransfer.toWalletId, -Number(existingTransfer.amount));
+  addToWallet(nextTransfer.fromWalletId, -Number(nextTransfer.amount));
+  addToWallet(nextTransfer.toWalletId, Number(nextTransfer.amount));
+
+  const hasNegativeBalance = [...projectedBalances.values()].some(
+    (balance) => balance < 0,
+  );
+
+  if (hasNegativeBalance) {
+    const err = new Error("Your wallet balance is less than the payment amount.");
+    err.statusCode = 400;
+    throw err;
+  }
+};
+
+const updateTransfer = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+    const {
+      fromWalletId,
+      toWalletId,
+      amount,
+      title,
+      description,
+      transferDate,
+      removeReceipt,
+    } = req.body;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return errorResponse(res, "Invalid id", 400);
+    }
+
+    if (fromWalletId !== undefined && !mongoose.isValidObjectId(fromWalletId)) {
+      return errorResponse(res, "Valid fromWalletId is required", 400);
+    }
+
+    if (toWalletId !== undefined && !mongoose.isValidObjectId(toWalletId)) {
+      return errorResponse(res, "Valid toWalletId is required", 400);
+    }
+
+    let parsedAmount;
+    if (amount !== undefined) {
+      parsedAmount = Number(amount);
+      if (parsedAmount <= 0 || Number.isNaN(parsedAmount)) {
+        return errorResponse(res, "amount must be a positive number", 400);
+      }
+    }
+
+    if (title !== undefined && (typeof title !== "string" || !title.trim())) {
+      return errorResponse(res, "title must be a non-empty string", 400);
+    }
+
+    let parsedTransferDate;
+    if (transferDate !== undefined) {
+      parsedTransferDate = new Date(transferDate);
+      if (Number.isNaN(parsedTransferDate.getTime())) {
+        return errorResponse(res, "Invalid transferDate", 400);
+      }
+    }
+
+    session.startTransaction();
+
+    const transfer = await WalletTransfer.findOne({ _id: id, userId }).session(
+      session,
+    );
+
+    if (!transfer) {
+      await session.abortTransaction();
+      return errorResponse(res, "Transfer not found", 404);
+    }
+
+    const nextFromWalletId = fromWalletId ?? transfer.fromWalletId;
+    const nextToWalletId = toWalletId ?? transfer.toWalletId;
+    const nextAmount = parsedAmount ?? transfer.amount;
+
+    if (nextFromWalletId.toString() === nextToWalletId.toString()) {
+      await session.abortTransaction();
+      return errorResponse(res, "Cannot transfer to the same wallet", 400);
+    }
+
+    const [fromWallet, toWallet, debitTx, creditTx, category] = await Promise.all([
+      assertOwnWallet(userId, nextFromWalletId, session),
+      assertOwnWallet(userId, nextToWalletId, session),
+      WalletTransaction.findOne({
+        _id: transfer.debitTransactionId,
+        userId,
+        isDeleted: false,
+      }).session(session),
+      WalletTransaction.findOne({
+        _id: transfer.creditTransactionId,
+        userId,
+        isDeleted: false,
+      }).session(session),
+      getOrCreateTransferCategory(userId, session),
+    ]);
+
+    if (!fromWallet || !toWallet) {
+      await session.abortTransaction();
+      return errorResponse(res, "Wallet not found", 404);
+    }
+
+    if (!debitTx || !creditTx) {
+      await session.abortTransaction();
+      return errorResponse(res, "Linked transfer transactions not found", 404);
+    }
+
+    try {
+      await assertWalletBalancesAfterTransferUpdate(userId, transfer, {
+        fromWalletId: nextFromWalletId,
+        toWalletId: nextToWalletId,
+        amount: nextAmount,
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
+
+    const nextTitle =
+      title !== undefined ? title.trim() : transfer.title || "Wallet transfer";
+    const nextDescription =
+      description !== undefined ? description ?? null : transfer.description ?? null;
+    const nextDate = parsedTransferDate ?? transfer.transferDate;
+    const now = new Date();
+
+    transfer.fromWalletId = nextFromWalletId;
+    transfer.toWalletId = nextToWalletId;
+    transfer.amount = nextAmount;
+    transfer.title = nextTitle;
+    transfer.description = nextDescription;
+    transfer.transferDate = nextDate;
+    transfer.updatedAt = now;
+
+    debitTx.walletId = nextFromWalletId;
+    debitTx.categoryId = category._id;
+    debitTx.type = "EXPENSE";
+    debitTx.amount = nextAmount;
+    debitTx.title = nextTitle;
+    debitTx.description = nextDescription;
+    debitTx.transactionDate = nextDate;
+    debitTx.categorySnapshot = { name: category.name };
+    debitTx.walletSnapshot = {
+      walletName: fromWallet.walletName,
+      walletColor: fromWallet.color,
+    };
+    debitTx.updatedAt = now;
+
+    creditTx.walletId = nextToWalletId;
+    creditTx.categoryId = category._id;
+    creditTx.type = "INCOME";
+    creditTx.amount = nextAmount;
+    creditTx.title = nextTitle;
+    creditTx.description = nextDescription;
+    creditTx.transactionDate = nextDate;
+    creditTx.categorySnapshot = { name: category.name };
+    creditTx.walletSnapshot = {
+      walletName: toWallet.walletName,
+      walletColor: toWallet.color,
+    };
+    creditTx.updatedAt = now;
+
+    if (removeReceipt === true || removeReceipt === "true") {
+      transfer.set("receipt", undefined);
+      debitTx.set("receipt", undefined);
+      creditTx.set("receipt", undefined);
+      await Attachment.updateMany(
+        {
+          transactionId: { $in: [debitTx._id, creditTx._id] },
+          userId,
+          purpose: "RECEIPT",
+        },
+        { $set: { transactionId: null } },
+        { session },
+      );
+    }
+
+    const receipt = await createReceiptAttachment({
+      userId,
+      transactionId: debitTx._id,
+      file: req.file,
+      session,
+    });
+
+    if (receipt) {
+      transfer.receipt = receipt;
+      debitTx.receipt = receipt;
+      creditTx.receipt = receipt;
+    }
+
+    await Promise.all([
+      transfer.save({ session }),
+      debitTx.save({ session }),
+      creditTx.save({ session }),
+    ]);
+
+    await session.commitTransaction();
+
+    const populated = await WalletTransfer.findById(transfer._id)
+      .populate("fromWalletId", "walletName")
+      .populate("toWalletId", "walletName");
+
+    return successResponse(res, "Transfer updated successfully", populated);
+  } catch (error) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    return errorResponse(res, error.message, error.statusCode || 500);
+  } finally {
+    session.endSession();
+  }
+};
+
 module.exports = {
   listTransfers,
   createTransfer,
+  updateTransfer,
 };

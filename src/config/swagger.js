@@ -429,6 +429,43 @@ const options = {
             },
           },
         },
+        UpdateTransferRequest: {
+          type: "object",
+          properties: {
+            fromWalletId: { type: "string" },
+            toWalletId: { type: "string" },
+            amount: { type: "number", example: 75 },
+            title: { type: "string", example: "Move to savings" },
+            description: { type: "string", nullable: true },
+            transferDate: { type: "string", format: "date-time" },
+            removeReceipt: {
+              type: "boolean",
+              example: false,
+              description: "Set true to unlink the current receipt",
+            },
+          },
+        },
+        UpdateTransferMultipartRequest: {
+          type: "object",
+          properties: {
+            fromWalletId: { type: "string" },
+            toWalletId: { type: "string" },
+            amount: { type: "number", example: 75 },
+            title: { type: "string", example: "Move to savings" },
+            description: { type: "string", nullable: true },
+            transferDate: { type: "string", format: "date-time" },
+            removeReceipt: {
+              type: "string",
+              example: "false",
+              description: "Set true to unlink the current receipt",
+            },
+            receipt: {
+              type: "string",
+              format: "binary",
+              description: "Replacement receipt image or PDF file, max 10MB",
+            },
+          },
+        },
         CreatePlannedPaymentRequest: {
           type: "object",
           required: [
@@ -478,8 +515,61 @@ const options = {
           type: "object",
           required: ["occurrenceDate", "action"],
           properties: {
-            occurrenceDate: { type: "string", format: "date-time" },
+            occurrenceDate: {
+              type: "string",
+              format: "date-time",
+              example: "2026-07-23",
+              description:
+                "Date of the occurrence to accept or decline. Accepts ISO date-time or YYYY-MM-DD.",
+            },
             action: { type: "string", enum: ["ACCEPT", "DECLINE"] },
+          },
+        },
+        DeletePlannedPaymentOccurrenceRequest: {
+          type: "object",
+          required: ["occurrenceDate"],
+          properties: {
+            occurrenceDate: {
+              type: "string",
+              format: "date-time",
+              example: "2026-07-23",
+              description:
+                "Date of the single occurrence to remove. Accepts ISO date-time or YYYY-MM-DD.",
+            },
+          },
+        },
+        PlannedPaymentOccurrence: {
+          type: "object",
+          properties: {
+            _id: {
+              type: "string",
+              example: "6a2653846b043ec4ec66e08c:2026-07-23",
+              description:
+                "Composite id in the form plannedPaymentId:occurrenceKey. Each list row is one scheduled date, not a separate planned payment record.",
+            },
+            plannedPaymentId: { type: "string" },
+            occurrenceKey: {
+              type: "string",
+              example: "2026-07-23",
+            },
+            occurrenceNumber: { type: "integer", example: 5 },
+            occurrenceDate: { type: "string", format: "date-time" },
+            status: { type: "string", enum: ["UPCOMING", "OVERDUE"] },
+            type: { type: "string", enum: ["INCOME", "EXPENSE"] },
+            title: { type: "string" },
+            amount: { type: "number" },
+            description: { type: "string", nullable: true },
+            plannedType: { type: "string", enum: ["ONE_TIME", "REPEATED"] },
+            startDate: { type: "string", format: "date-time" },
+            repeatInterval: { type: "integer", nullable: true },
+            repeatUnit: {
+              type: "string",
+              enum: ["DAYS", "WEEKS", "MONTHS", "YEARS"],
+              nullable: true,
+            },
+            repeatUntilTimes: { type: "integer", nullable: true },
+            walletId: { type: "object" },
+            categoryId: { type: "object" },
           },
         },
         CreateVoiceTransactionDraftRequest: {
@@ -1242,11 +1332,11 @@ const options = {
         },
       },
       "/api/planned-payments/{id}": {
-        delete: {
+        patch: {
           tags: ["Planned Payments"],
-          summary: "Delete planned payment",
+          summary: "Update planned payment",
           description:
-            "Soft-deletes a planned payment owned by the authenticated user.",
+            "Updates an active planned payment. Accepts the same fields as create. If startDate, plannedType, or repeat settings change, existing accepted/declined occurrence decisions are cleared because the schedule changes.",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -1254,6 +1344,44 @@ const options = {
               in: "path",
               required: true,
               schema: { type: "string" },
+              description: "Planned payment id (plannedPaymentId).",
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/CreatePlannedPaymentRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Planned payment updated" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            404: {
+              description: "Planned payment, wallet, or category not found",
+            },
+            500: { description: "Server error" },
+          },
+        },
+        delete: {
+          tags: ["Planned Payments"],
+          summary: "Delete entire planned payment series",
+          description:
+            "Soft-deletes the planned payment rule and cancels all of its occurrences. For repeated payments, this removes every scheduled date in the series. To remove only one occurrence, use DELETE /api/planned-payments/{id}/occurrences instead. Request body is ignored.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+              description:
+                "Planned payment id (plannedPaymentId), not the composite occurrence id.",
             },
           ],
           responses: {
@@ -1271,7 +1399,7 @@ const options = {
           tags: ["Planned Payments"],
           summary: "Fetch upcoming and overdue planned payment occurrences",
           description:
-            "Returns undecided occurrences from today to today + days. For ALL/OVERDUE, overdue past occurrences are also included.",
+            "Returns undecided occurrences from today to today + days. For ALL/OVERDUE, overdue past occurrences are also included. Repeated planned payments expand into multiple rows that share the same plannedPaymentId. Each row has a composite _id of plannedPaymentId:occurrenceKey.",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -1291,7 +1419,32 @@ const options = {
             },
           ],
           responses: {
-            200: { description: "Planned payment occurrences" },
+            200: {
+              description: "Planned payment occurrences",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      message: { type: "string" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          items: {
+                            type: "array",
+                            items: {
+                              $ref: "#/components/schemas/PlannedPaymentOccurrence",
+                            },
+                          },
+                          count: { type: "integer" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
@@ -1337,7 +1490,7 @@ const options = {
           tags: ["Planned Payments"],
           summary: "Accept or decline one planned payment occurrence",
           description:
-            "ACCEPT creates an income/expense transaction. DECLINE records the occurrence as declined so it no longer appears.",
+            "ACCEPT creates an income/expense transaction. DECLINE records the occurrence as declined so it no longer appears in upcoming/overdue lists. Use plannedPaymentId in the path, not the composite occurrence _id from the list response.",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -1345,6 +1498,7 @@ const options = {
               in: "path",
               required: true,
               schema: { type: "string" },
+              description: "Planned payment id (plannedPaymentId).",
             },
           ],
           requestBody: {
@@ -1365,6 +1519,45 @@ const options = {
             404: {
               description: "Planned payment, wallet, or category not found",
             },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/planned-payments/{id}/occurrences": {
+        delete: {
+          tags: ["Planned Payments"],
+          summary: "Delete one planned payment occurrence",
+          description:
+            "Removes a single scheduled occurrence by recording it as declined. Other occurrences in a repeated series remain active. Equivalent to POST /api/planned-payments/{id}/occurrences/decision with action DECLINE.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+              description:
+                "Planned payment id (plannedPaymentId), not the composite occurrence id.",
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/DeletePlannedPaymentOccurrenceRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Planned payment occurrence deleted" },
+            400: {
+              description: "Validation failed or occurrence already decided",
+            },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            404: { description: "Planned payment not found" },
             500: { description: "Server error" },
           },
         },
@@ -1416,6 +1609,46 @@ const options = {
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             404: { description: "Wallet not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/transfers/{id}": {
+        patch: {
+          tags: ["Transfers"],
+          summary: "Update wallet-to-wallet transfer",
+          description:
+            "Updates the transfer and its linked debit and credit wallet transactions.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  $ref: "#/components/schemas/UpdateTransferMultipartRequest",
+                },
+              },
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UpdateTransferRequest" },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Transfer updated" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            404: {
+              description: "Transfer, wallet, or linked transaction not found",
+            },
             500: { description: "Server error" },
           },
         },
