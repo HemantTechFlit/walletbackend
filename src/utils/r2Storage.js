@@ -89,6 +89,19 @@ const uploadReport = async ({ buffer, mimeType, fileName, userId }) => {
   return uploaded.url;
 };
 
+const uploadSupportImage = async ({ buffer, mimeType, originalName, userId }) => {
+  const ext = safeExtension(originalName, ".jpg");
+  const fileName = `support-${userId}-${Date.now()}${ext}`;
+
+  return uploadBufferToR2({
+    buffer,
+    mimeType,
+    originalName,
+    keyPrefix: `support/${userId}`,
+    fileName,
+  });
+};
+
 const uploadReceipt = async ({ buffer, mimeType, originalName, userId }) => {
   const fallback = mimeType === "application/pdf" ? ".pdf" : ".jpg";
   const ext = safeExtension(originalName, fallback);
@@ -106,5 +119,6 @@ const uploadReceipt = async ({ buffer, mimeType, originalName, userId }) => {
 module.exports = {
   uploadProfileImage,
   uploadReport,
+  uploadSupportImage,
   uploadReceipt,
 };

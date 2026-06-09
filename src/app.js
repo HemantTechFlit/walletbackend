@@ -17,6 +17,7 @@ const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const subscriptionCheckoutPageRoutes = require("./routes/subscriptionCheckoutPageRoutes");
 const stripeWebhookRoutes = require("./routes/stripeWebhookRoutes");
 const plannedPaymentRoutes = require("./routes/plannedPaymentRoutes");
+const supportRoutes = require("./routes/supportRoutes");
 
 const app = express();
 connectDB();
@@ -41,6 +42,7 @@ app.use("/api/reports", reportRoutes);
 app.use("/subscription", subscriptionCheckoutPageRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/planned-payments", plannedPaymentRoutes);
+app.use("/api/support", supportRoutes);
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get("/api/docs.json", (req, res) => {
   res.setHeader("Content-Type", "application/json");
