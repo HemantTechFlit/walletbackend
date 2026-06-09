@@ -1,211 +1,215 @@
 const mongoose = require("mongoose");
 
-const User = require("../models/User");
-const Plan = require("../models/Plan");
-const Wallet = require("../models/Wallet");
-const WalletTransaction = require("../models/WalletTransaction");
-const TransactionCategory = require("../models/TransactionCategory");
-const Subscription = require("../models/Subscription");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
-const { assertSufficientWalletBalance } = require("../utils/walletBalance");
+const { buildPlansCatalogForUser } = require("../utils/planLimits");
 const {
-  seedPlansIfEmpty,
-  buildPlansCatalogForUser,
-  BASIC_PLAN_NAME,
-} = require("../utils/planLimits");
+  createCheckoutSession,
+  fulfillCheckoutSession,
+  changeSubscriptionPlan,
+  cancelSubscription,
+  reactivateSubscription,
+} = require("../services/subscriptionService");
 
-const isFreePlan = (plan) => plan.name === BASIC_PLAN_NAME || plan.price === 0;
+const renderCheckoutSuccessPage = (planName) => `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Subscription Activated</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f8fb; margin: 0; padding: 40px 16px; }
+    .card { max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 32px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+    h1 { margin: 0 0 12px; font-size: 28px; color: #0f172a; }
+    p { margin: 0 0 16px; color: #475569; line-height: 1.6; }
+    .badge { display: inline-block; background: #dcfce7; color: #166534; padding: 6px 12px; border-radius: 999px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">Payment successful</div>
+    <h1>Subscription activated</h1>
+    <p>Your <strong>${planName}</strong> plan is now active. You can return to the app and start using your upgraded features.</p>
+    <p>If your plan does not update immediately, refresh the subscription screen in the app.</p>
+  </div>
+</body>
+</html>`;
 
-const SUBSCRIPTION_CATEGORY_NAME = "Subscription";
-
-const getOrCreateSubscriptionCategory = async (userId, session) => {
-  let category = await TransactionCategory.findOne({
-    userId,
-    name: SUBSCRIPTION_CATEGORY_NAME,
-    isDeleted: false,
-  }).session(session);
-
-  if (!category) {
-    const created = await TransactionCategory.create(
-      [
-        {
-          userId,
-          name: SUBSCRIPTION_CATEGORY_NAME,
-          isDefault: false,
-        },
-      ],
-      { session },
-    );
-    category = created[0];
-    await User.findByIdAndUpdate(
-      userId,
-      { $addToSet: { selectedCategories: category._id } },
-      { session },
-    );
-  }
-
-  return category;
-};
-
-const computeEndDate = (plan) => {
-  const start = new Date();
-  const end = new Date(start);
-
-  if (plan.billingType === "MONTHLY") {
-    end.setMonth(end.getMonth() + 1);
-  } else if (plan.billingType === "YEARLY") {
-    end.setFullYear(end.getFullYear() + 1);
-  } else if (plan.billingType === "LIFETIME") {
-    end.setFullYear(end.getFullYear() + 100);
-  } else {
-    end.setMonth(end.getMonth() + 1);
-  }
-
-  return { start, end };
-};
+const renderCheckoutCancelPage = () => `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Checkout Cancelled</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f8fb; margin: 0; padding: 40px 16px; }
+    .card { max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 32px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+    h1 { margin: 0 0 12px; font-size: 28px; color: #0f172a; }
+    p { margin: 0; color: #475569; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Checkout cancelled</h1>
+    <p>No payment was made. You can return to the app and try upgrading again whenever you are ready.</p>
+  </div>
+</body>
+</html>`;
 
 const getMySubscription = async (req, res) => {
   try {
-    const { plans, plan, subscription } = await buildPlansCatalogForUser(
-      req.user.userId,
-    );
+    const catalog = await buildPlansCatalogForUser(req.user.userId);
 
     return successResponse(res, "Subscription fetched successfully", {
-      plans,
-      plan,
-      subscription,
+      plans: catalog.plans,
+      plan: catalog.plan,
+      subscription: catalog.subscription,
+      pendingPlan: catalog.pendingPlan,
+      walletCount: catalog.walletCount,
+      walletLimit: catalog.plan?.maxWallets ?? null,
+      billingProvider: catalog.subscription?.paymentProvider || null,
     });
   } catch (error) {
-    return errorResponse(res, error.message);
+    return errorResponse(res, error.message, error.statusCode || 500);
   }
 };
 
-const subscribe = async (req, res) => {
-  const session = await mongoose.startSession();
-
+const createStripeCheckout = async (req, res) => {
   try {
-    await seedPlansIfEmpty();
-    const userId = req.user.userId;
-    const { planId, walletId, paymentId = null, amountPaid = 0 } = req.body;
+    const { planId } = req.body;
 
     if (!planId || !mongoose.isValidObjectId(planId)) {
       return errorResponse(res, "Valid planId is required", 400);
     }
 
-    session.startTransaction();
+    const checkout = await createCheckoutSession({
+      userId: req.user.userId,
+      planId,
+    });
 
-    const plan = await Plan.findById(planId).session(session);
-    if (!plan || !plan.isActive) {
-      await session.abortTransaction();
-      return errorResponse(res, "Plan not found", 404);
+    return successResponse(res, "Stripe checkout session created successfully", checkout);
+  } catch (error) {
+    return errorResponse(res, error.message, error.statusCode || 500);
+  }
+};
+
+const changePlan = async (req, res) => {
+  try {
+    const { planId } = req.body;
+
+    if (!planId || !mongoose.isValidObjectId(planId)) {
+      return errorResponse(res, "Valid planId is required", 400);
     }
 
-    const freePlan = isFreePlan(plan);
-    let paymentProvider = null;
-    let paymentWallet = null;
-    const paymentAmount = Number(amountPaid) || plan.price;
+    const result = await changeSubscriptionPlan({
+      userId: req.user.userId,
+      planId,
+    });
 
-    if (!freePlan) {
-      if (!walletId || !mongoose.isValidObjectId(walletId)) {
-        await session.abortTransaction();
-        return errorResponse(
-          res,
-          "walletId is required when upgrading to a paid plan",
-          400,
-        );
+    return successResponse(res, result.message, {
+      subscription: result.subscription,
+      effectiveImmediately: result.effectiveImmediately,
+    });
+  } catch (error) {
+    return errorResponse(res, error.message, error.statusCode || 500);
+  }
+};
+
+const cancelMySubscription = async (req, res) => {
+  try {
+    const result = await cancelSubscription(req.user.userId);
+    return successResponse(res, result.message, {
+      subscription: result.subscription,
+    });
+  } catch (error) {
+    return errorResponse(res, error.message, error.statusCode || 500);
+  }
+};
+
+const reactivateMySubscription = async (req, res) => {
+  try {
+    const result = await reactivateSubscription(req.user.userId);
+    return successResponse(res, result.message, {
+      subscription: result.subscription,
+    });
+  } catch (error) {
+    return errorResponse(res, error.message, error.statusCode || 500);
+  }
+};
+
+const handleCheckoutSuccess = async (req, res) => {
+  try {
+    const sessionId = req.query.session_id;
+
+    if (!sessionId) {
+      if (req.query.format === "json") {
+        return errorResponse(res, "session_id query parameter is required", 400);
       }
-
-      paymentWallet = await Wallet.findOne({
-        _id: walletId,
-        userId,
-        isDeleted: false,
-      }).session(session);
-
-      if (!paymentWallet) {
-        await session.abortTransaction();
-        return errorResponse(res, "Payment wallet not found", 404);
-      }
-
-      try {
-        await assertSufficientWalletBalance(userId, walletId, paymentAmount);
-      } catch (error) {
-        await session.abortTransaction();
-        return errorResponse(res, error.message, error.statusCode || 400);
-      }
-
-      paymentProvider = paymentWallet.walletName;
-
-      const category = await getOrCreateSubscriptionCategory(userId, session);
-      const when = new Date();
-
-      await WalletTransaction.create(
-        [
-          {
-            userId,
-            walletId,
-            categoryId: category._id,
-            type: "EXPENSE",
-            amount: paymentAmount,
-            title: `${plan.name} subscription`,
-            description: `Plan upgrade to ${plan.name}`,
-            transactionDate: when,
-            categorySnapshot: { name: category.name },
-            walletSnapshot: { walletName: paymentWallet.walletName },
-            createdBy: userId,
-          },
-        ],
-        { session },
+      return res.status(400).send(
+        "<h1>Missing session</h1><p>The checkout session id was not provided.</p>",
       );
     }
 
-    const { start, end } = computeEndDate(plan);
+    const result = await fulfillCheckoutSession(sessionId);
+    const planName = result.plan?.name || "paid";
 
-    await Subscription.updateMany(
-      { userId, status: "ACTIVE" },
-      { $set: { status: "CANCELLED" } },
-      { session },
-    );
-
-    const subscription = await Subscription.create(
-      [
-        {
-          userId,
-          planId,
-          startDate: start,
-          endDate: end,
-          paymentProvider,
-          paymentId,
-          amountPaid: paymentAmount,
-          status: "ACTIVE",
-        },
-      ],
-      { session },
-    );
-
-    const sub = subscription[0];
-
-    await User.findByIdAndUpdate(
-      userId,
-      { $set: { subscriptionId: sub._id, updatedAt: new Date() } },
-      { session },
-    );
-
-    await session.commitTransaction();
-
-    const populated = await Subscription.findById(sub._id).populate("planId");
-
-    return successResponse(res, "Subscription activated successfully", populated, 201);
-  } catch (error) {
-    if (session.inTransaction()) {
-      await session.abortTransaction();
+    if (req.query.format === "json") {
+      return successResponse(res, "Subscription activated successfully", result);
     }
-    return errorResponse(res, error.message);
-  } finally {
-    session.endSession();
+
+    return res.status(200).send(renderCheckoutSuccessPage(planName));
+  } catch (error) {
+    if (req.query.format === "json") {
+      return errorResponse(res, error.message, error.statusCode || 500);
+    }
+
+    return res
+      .status(error.statusCode || 500)
+      .send(
+        `<h1>Subscription activation failed</h1><p>${error.message}</p>`,
+      );
+  }
+};
+
+const handleCheckoutCancel = async (req, res) => {
+  if (req.query.format === "json") {
+    return successResponse(res, "Checkout cancelled", {
+      cancelled: true,
+    });
+  }
+
+  return res.status(200).send(renderCheckoutCancelPage());
+};
+
+const confirmCheckoutSession = async (req, res) => {
+  try {
+    const sessionId = req.query.session_id || req.body?.sessionId;
+
+    if (!sessionId) {
+      return errorResponse(res, "session_id is required", 400);
+    }
+
+    const result = await fulfillCheckoutSession(sessionId);
+
+    if (
+      result.subscription?.userId?.toString() &&
+      result.subscription.userId.toString() !== req.user.userId
+    ) {
+      return errorResponse(res, "Checkout session does not belong to this user", 403);
+    }
+
+    return successResponse(res, "Subscription activated successfully", result);
+  } catch (error) {
+    return errorResponse(res, error.message, error.statusCode || 500);
   }
 };
 
 module.exports = {
   getMySubscription,
-  subscribe,
+  createStripeCheckout,
+  handleCheckoutSuccess,
+  handleCheckoutCancel,
+  confirmCheckoutSession,
+  changePlan,
+  cancelMySubscription,
+  reactivateMySubscription,
 };

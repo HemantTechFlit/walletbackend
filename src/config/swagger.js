@@ -11,30 +11,21 @@ const options = {
     },
     servers: [
       {
-        url: "https://expense-tracker-ip37.onrender.com",
-        description: "Expense Tracker API production server",
+        url: "http://localhost:3000",
+        description: "Local development server",
       },
     ],
     tags: [
       { name: "Auth", description: "Authentication APIs" },
       { name: "Onboarding", description: "Onboarding APIs" },
       { name: "Users", description: "Current user profile and preferences" },
-      {
-        name: "Wallets",
-        description: "User wallets (requires completed onboarding)",
-      },
+      { name: "Wallets", description: "User wallets (requires completed onboarding)" },
       { name: "Categories", description: "Transaction categories" },
       { name: "Transactions", description: "Income and expense entries" },
-      {
-        name: "Planned Payments",
-        description: "Manual planned income/expense reminders",
-      },
+      { name: "Planned Payments", description: "Manual planned income/expense reminders" },
       { name: "Transfers", description: "Wallet-to-wallet transfers" },
       { name: "Voice", description: "AI-assisted voice transaction drafts" },
-      {
-        name: "Reports",
-        description: "CSV/PDF reports uploaded to Google Drive",
-      },
+      { name: "Reports", description: "CSV/PDF reports uploaded to Google Drive" },
       {
         name: "Subscriptions",
         description: "User subscription and effective plan",
@@ -112,8 +103,7 @@ const options = {
             },
             currency: {
               type: "string",
-              description:
-                "Optional ISO 4217 currency code for first-time social users.",
+              description: "Optional ISO 4217 currency code for first-time social users.",
               example: "USD",
             },
           },
@@ -210,8 +200,7 @@ const options = {
             },
             removeProfileImage: {
               type: "boolean",
-              description:
-                "Set true to clear profileImage (multipart form field)",
+              description: "Set true to clear profileImage (multipart form field)",
             },
           },
         },
@@ -226,8 +215,7 @@ const options = {
             profileImage: {
               type: "string",
               format: "binary",
-              description:
-                "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
+              description: "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
             },
             removeProfileImage: {
               type: "string",
@@ -309,14 +297,18 @@ const options = {
         },
         CreateTransactionRequest: {
           type: "object",
-          required: ["walletId", "type", "amount", "title"],
+          required: [
+            "walletId",
+            "type",
+            "amount",
+            "title",
+          ],
           properties: {
             walletId: { type: "string" },
             categoryId: {
               type: "string",
               nullable: true,
-              description:
-                "Optional. If omitted, the transaction is created without a category.",
+              description: "Optional. If omitted, the transaction is created without a category.",
             },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: { type: "number", example: 99.5 },
@@ -329,6 +321,20 @@ const options = {
             },
           },
         },
+        ReceiptUploadPolicy: {
+          type: "object",
+          description:
+            "Receipt uploads are plan-based. Basic (free): not allowed. Premium: allowed up to 1 GB total receipt storage. Premium+: unlimited receipt storage. Each receipt file (image or PDF) may be up to 15 MB.",
+          properties: {
+            maxFileSizeMB: { type: "integer", example: 15 },
+            basicPlanAllowed: { type: "boolean", example: false },
+            premiumStorageLimitMB: { type: "integer", example: 1024 },
+            premiumPlusStorageLimitMB: {
+              type: "string",
+              example: "unlimited",
+            },
+          },
+        },
         CreateTransactionMultipartRequest: {
           type: "object",
           required: ["walletId", "type", "amount", "title"],
@@ -337,8 +343,7 @@ const options = {
             categoryId: {
               type: "string",
               nullable: true,
-              description:
-                "Optional. If omitted, the transaction is created without a category.",
+              description: "Optional. If omitted, the transaction is created without a category.",
             },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: { type: "number", example: 99.5 },
@@ -352,7 +357,8 @@ const options = {
             receipt: {
               type: "string",
               format: "binary",
-              description: "Receipt image or PDF file, max 10MB",
+              description:
+                "Receipt image or PDF file, max 15 MB. Requires Premium or Premium+ plan. Premium storage is capped at 1 GB total across all receipts.",
             },
           },
         },
@@ -396,7 +402,8 @@ const options = {
             receipt: {
               type: "string",
               format: "binary",
-              description: "Replacement receipt image or PDF file, max 10MB",
+              description:
+                "Replacement receipt image or PDF file, max 15 MB. Requires Premium or Premium+ plan. Premium storage is capped at 1 GB total across all receipts.",
             },
           },
         },
@@ -425,7 +432,8 @@ const options = {
             receipt: {
               type: "string",
               format: "binary",
-              description: "Receipt image or PDF file, max 10MB",
+              description:
+                "Receipt image or PDF file, max 15 MB. Requires Premium or Premium+ plan. Premium storage is capped at 1 GB total across all receipts.",
             },
           },
         },
@@ -462,7 +470,8 @@ const options = {
             receipt: {
               type: "string",
               format: "binary",
-              description: "Replacement receipt image or PDF file, max 10MB",
+              description:
+                "Replacement receipt image or PDF file, max 15 MB. Requires Premium or Premium+ plan. Premium storage is capped at 1 GB total across all receipts.",
             },
           },
         },
@@ -617,7 +626,8 @@ const options = {
                 transactionType: {
                   type: "string",
                   enum: ["income", "expense", "INCOME", "EXPENSE"],
-                  description: "Filters transactions by type. Alias: type.",
+                  description:
+                    "Filters transactions by type. Alias: type.",
                 },
                 categoryId: { type: "string" },
               },
@@ -625,17 +635,25 @@ const options = {
             },
           },
         },
-        SubscribeRequest: {
+        SubscriptionCheckoutRequest: {
           type: "object",
           required: ["planId"],
           properties: {
-            planId: { type: "string" },
-            walletId: {
+            planId: {
+              type: "string",
+              description: "Premium or Premium+ plan id",
+            },
+          },
+        },
+        ChangeSubscriptionPlanRequest: {
+          type: "object",
+          required: ["planId"],
+          properties: {
+            planId: {
               type: "string",
               description:
-                "Required for paid plans (Premium, Premium+). User wallet used to pay; stored as paymentProvider (wallet name).",
+                "Target paid plan id. Upgrades apply immediately with proration. Downgrades apply from the next billing period.",
             },
-            amountPaid: { type: "number", example: 2 },
           },
         },
       },
@@ -713,9 +731,7 @@ const options = {
           },
           responses: {
             200: { description: "Apple login successful with tokens" },
-            400: {
-              description: "Invalid token, missing email, or configuration",
-            },
+            400: { description: "Invalid token, missing email, or configuration" },
             403: { description: "User is not active" },
             500: { description: "Server error" },
           },
@@ -949,9 +965,7 @@ const options = {
             required: true,
             content: {
               "application/json": {
-                schema: {
-                  $ref: "#/components/schemas/SetDefaultWalletRequest",
-                },
+                schema: { $ref: "#/components/schemas/SetDefaultWalletRequest" },
               },
             },
           },
@@ -1202,6 +1216,8 @@ const options = {
         post: {
           tags: ["Transactions"],
           summary: "Create transaction, optionally with receipt",
+          description:
+            "Receipt upload is disabled on the free (Basic) plan. Premium users may upload receipts up to 1 GB total storage. Premium+ users have unlimited receipt storage. Each receipt file may be up to 15 MB.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -1220,9 +1236,12 @@ const options = {
           },
           responses: {
             201: { description: "Transaction created" },
-            400: { description: "Validation failed" },
+            400: { description: "Validation failed or receipt exceeds 15 MB" },
             401: { description: "Unauthorized" },
-            403: { description: "Onboarding not completed" },
+            403: {
+              description:
+                "Onboarding not completed, receipt upload not allowed on free plan, or Premium storage limit reached",
+            },
             404: { description: "Wallet or category not found" },
             500: { description: "Server error" },
           },
@@ -1252,6 +1271,8 @@ const options = {
         patch: {
           tags: ["Transactions"],
           summary: "Update transaction, optionally replacing receipt",
+          description:
+            "Receipt upload follows the same plan rules as transaction create. Replacing a receipt frees the previous file size from your storage quota before counting the new upload.",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -1278,9 +1299,12 @@ const options = {
           },
           responses: {
             200: { description: "Transaction updated" },
-            400: { description: "Validation failed or insufficient balance" },
+            400: { description: "Validation failed, insufficient balance, or receipt exceeds 15 MB" },
             401: { description: "Unauthorized" },
-            403: { description: "Onboarding not completed" },
+            403: {
+              description:
+                "Onboarding not completed, receipt upload not allowed on free plan, or Premium storage limit reached",
+            },
             404: { description: "Transaction, wallet, or category not found" },
             500: { description: "Server error" },
           },
@@ -1362,9 +1386,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            404: {
-              description: "Planned payment, wallet, or category not found",
-            },
+            404: { description: "Planned payment, wallet, or category not found" },
             500: { description: "Server error" },
           },
         },
@@ -1380,8 +1402,7 @@ const options = {
               in: "path",
               required: true,
               schema: { type: "string" },
-              description:
-                "Planned payment id (plannedPaymentId), not the composite occurrence id.",
+              description: "Planned payment id (plannedPaymentId), not the composite occurrence id.",
             },
           ],
           responses: {
@@ -1516,9 +1537,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            404: {
-              description: "Planned payment, wallet, or category not found",
-            },
+            404: { description: "Planned payment, wallet, or category not found" },
             500: { description: "Server error" },
           },
         },
@@ -1536,8 +1555,7 @@ const options = {
               in: "path",
               required: true,
               schema: { type: "string" },
-              description:
-                "Planned payment id (plannedPaymentId), not the composite occurrence id.",
+              description: "Planned payment id (plannedPaymentId), not the composite occurrence id.",
             },
           ],
           requestBody: {
@@ -1552,9 +1570,7 @@ const options = {
           },
           responses: {
             200: { description: "Planned payment occurrence deleted" },
-            400: {
-              description: "Validation failed or occurrence already decided",
-            },
+            400: { description: "Validation failed or occurrence already decided" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             404: { description: "Planned payment not found" },
@@ -1588,7 +1604,9 @@ const options = {
         },
         post: {
           tags: ["Transfers"],
-          summary: "Create wallet-to-wallet transfer",
+          summary: "Create wallet-to-wallet transfer, optionally with receipt",
+          description:
+            "Receipt upload is disabled on the free (Basic) plan. Premium users may upload receipts up to 1 GB total storage. Premium+ users have unlimited receipt storage. Each receipt file may be up to 15 MB.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -1605,9 +1623,12 @@ const options = {
           },
           responses: {
             201: { description: "Transfer completed" },
-            400: { description: "Validation failed" },
+            400: { description: "Validation failed or receipt exceeds 15 MB" },
             401: { description: "Unauthorized" },
-            403: { description: "Onboarding not completed" },
+            403: {
+              description:
+                "Onboarding not completed, receipt upload not allowed on free plan, or Premium storage limit reached",
+            },
             404: { description: "Wallet not found" },
             500: { description: "Server error" },
           },
@@ -1618,7 +1639,7 @@ const options = {
           tags: ["Transfers"],
           summary: "Update wallet-to-wallet transfer",
           description:
-            "Updates the transfer and its linked debit and credit wallet transactions.",
+            "Updates the transfer and its linked debit and credit wallet transactions. Receipt upload follows the same plan rules as transfer create.",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -1643,12 +1664,13 @@ const options = {
           },
           responses: {
             200: { description: "Transfer updated" },
-            400: { description: "Validation failed" },
+            400: { description: "Validation failed or receipt exceeds 15 MB" },
             401: { description: "Unauthorized" },
-            403: { description: "Onboarding not completed" },
-            404: {
-              description: "Transfer, wallet, or linked transaction not found",
+            403: {
+              description:
+                "Onboarding not completed, receipt upload not allowed on free plan, or Premium storage limit reached",
             },
+            404: { description: "Transfer, wallet, or linked transaction not found" },
             500: { description: "Server error" },
           },
         },
@@ -1656,8 +1678,7 @@ const options = {
       "/api/voice/transaction-draft": {
         post: {
           tags: ["Voice"],
-          summary:
-            "Generate an AI transaction or transfer draft from transcript text",
+          summary: "Generate an AI transaction or transfer draft from transcript text",
           description:
             "Returns a confirmation draft only. The frontend should let the user confirm or edit it, then call the existing transaction or transfer create API.",
           security: [{ bearerAuth: [] }],
@@ -1676,9 +1697,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            503: {
-              description: "Local or self-hosted voice model unavailable",
-            },
+            503: { description: "Local or self-hosted voice model unavailable" },
             500: { description: "Server error" },
           },
         },
@@ -1759,41 +1778,194 @@ const options = {
       "/api/subscriptions": {
         get: {
           tags: ["Subscriptions"],
-          summary: "Get all plans with selected flag and current subscription",
+          summary: "Get plans, current subscription, and wallet limits",
+          description:
+            "Returns all plans with selected flag, the user's effective plan, Stripe subscription metadata, pending downgrade/cancellation plan, wallet count, and wallet limit from the active plan.",
           security: [{ bearerAuth: [] }],
           responses: {
             200: {
               description:
-                "plans[] (each with selected: true on current plan), plan, subscription",
+                "plans[], plan, subscription, pendingPlan, walletCount, walletLimit, billingProvider",
             },
             401: { description: "Unauthorized" },
             500: { description: "Server error" },
           },
         },
+      },
+      "/subscription/success": {
+        get: {
+          tags: ["Subscriptions"],
+          summary: "Stripe checkout success redirect",
+          description:
+            "Browser redirect target after Stripe Checkout completes. Verifies the session_id, activates the subscription, and returns an HTML success page. Append format=json for a JSON response.",
+          parameters: [
+            {
+              name: "session_id",
+              in: "query",
+              required: true,
+              schema: { type: "string" },
+            },
+            {
+              name: "format",
+              in: "query",
+              required: false,
+              schema: { type: "string", enum: ["json"] },
+            },
+          ],
+          responses: {
+            200: { description: "Subscription activated" },
+            400: { description: "Missing or incomplete checkout session" },
+            500: { description: "Activation failed" },
+          },
+        },
+      },
+      "/subscription/cancel": {
+        get: {
+          tags: ["Subscriptions"],
+          summary: "Stripe checkout cancel redirect",
+          description:
+            "Browser redirect target when the user cancels Stripe Checkout. Returns an HTML page or JSON when format=json is provided.",
+          parameters: [
+            {
+              name: "format",
+              in: "query",
+              required: false,
+              schema: { type: "string", enum: ["json"] },
+            },
+          ],
+          responses: {
+            200: { description: "Checkout cancelled page" },
+          },
+        },
+      },
+      "/api/subscriptions/checkout": {
         post: {
           tags: ["Subscriptions"],
-          summary: "Subscribe to a plan (demo: no payment gateway)",
+          summary: "Start Stripe checkout for a paid plan",
+          description:
+            "Creates a Stripe Checkout session for recurring monthly billing. Use this when upgrading from the free Basic plan to Premium or Premium+. After payment, Stripe redirects the browser to /subscription/success?session_id=...",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/SubscribeRequest" },
+                schema: {
+                  $ref: "#/components/schemas/SubscriptionCheckoutRequest",
+                },
               },
             },
           },
           responses: {
-            201: { description: "Subscription activated" },
+            200: { description: "Stripe checkout session created" },
+            400: { description: "Validation failed or active paid subscription already exists" },
+            401: { description: "Unauthorized" },
+            403: { description: "Too many wallets for target plan" },
+            404: { description: "Plan not found" },
+            503: { description: "Stripe is not configured" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/subscriptions/checkout/success": {
+        get: {
+          tags: ["Subscriptions"],
+          summary: "Confirm checkout session after Stripe redirect",
+          description:
+            "Authenticated API alternative to the browser success page. Pass the session_id returned by Stripe after checkout.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "session_id",
+              in: "query",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            200: { description: "Subscription activated" },
+            400: { description: "Missing or incomplete checkout session" },
+            401: { description: "Unauthorized" },
+            403: { description: "Checkout session does not belong to this user" },
+            500: { description: "Activation failed" },
+          },
+        },
+      },
+      "/api/subscriptions/change-plan": {
+        post: {
+          tags: ["Subscriptions"],
+          summary: "Upgrade or downgrade an active Stripe subscription",
+          description:
+            "Upgrades apply immediately and may charge a prorated amount. Downgrades are scheduled for the next billing period and reduce recurring cost from the next month.",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChangeSubscriptionPlanRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Subscription plan change processed" },
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
-            404: { description: "Plan not found" },
+            403: { description: "Too many wallets for target plan" },
+            404: { description: "Subscription or plan not found" },
+            503: { description: "Stripe is not configured" },
             500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/subscriptions/cancel": {
+        post: {
+          tags: ["Subscriptions"],
+          summary: "Cancel paid subscription at period end",
+          description:
+            "Stops recurring Stripe charges from the next billing period. The user keeps the current paid plan until currentPeriodEnd, then moves back to Basic.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            200: { description: "Cancellation scheduled" },
+            401: { description: "Unauthorized" },
+            403: { description: "Too many wallets for the free plan" },
+            404: { description: "Active Stripe subscription not found" },
+            503: { description: "Stripe is not configured" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/subscriptions/reactivate": {
+        post: {
+          tags: ["Subscriptions"],
+          summary: "Undo a scheduled subscription cancellation",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            200: { description: "Subscription reactivated" },
+            400: { description: "Subscription is not scheduled for cancellation" },
+            401: { description: "Unauthorized" },
+            404: { description: "Stripe subscription not found" },
+            503: { description: "Stripe is not configured" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/webhooks/stripe": {
+        post: {
+          tags: ["Subscriptions"],
+          summary: "Stripe webhook endpoint",
+          description:
+            "Receives Stripe events such as checkout.session.completed, customer.subscription.updated, and customer.subscription.deleted. Not for direct client use.",
+          responses: {
+            200: { description: "Webhook received" },
+            400: { description: "Invalid webhook signature" },
+            500: { description: "Webhook handler error" },
           },
         },
       },
     },
   },
-  apis: ["../routes/*.js"],
+  apis: [],
 };
 
 const swaggerSpec = swaggerJsdoc(options);

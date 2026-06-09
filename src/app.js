@@ -14,10 +14,17 @@ const transferRoutes = require("./routes/transferRoutes");
 const voiceRoutes = require("./routes/voiceRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
+const subscriptionCheckoutPageRoutes = require("./routes/subscriptionCheckoutPageRoutes");
+const stripeWebhookRoutes = require("./routes/stripeWebhookRoutes");
 const plannedPaymentRoutes = require("./routes/plannedPaymentRoutes");
 
 const app = express();
 connectDB();
+app.use(
+  "/api/webhooks/stripe",
+  express.raw({ type: "application/json" }),
+  stripeWebhookRoutes,
+);
 app.use(express.json());
 app.use(
   "/public/reports",
@@ -31,6 +38,7 @@ app.use("/api/transactions", transactionRoutes);
 app.use("/api/transfers", transferRoutes);
 app.use("/api/voice", voiceRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/subscription", subscriptionCheckoutPageRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/planned-payments", plannedPaymentRoutes);
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));

@@ -6,6 +6,18 @@ const Subscription = require("../models/Subscription");
 
 const BASIC_PLAN_NAME = "Basic";
 
+const getStripePriceIdForPlan = (planName) => {
+  if (planName === "Premium") {
+    return process.env.STRIPE_PRICE_PREMIUM || null;
+  }
+
+  if (planName === "Premium+") {
+    return process.env.STRIPE_PRICE_PREMIUM_PLUS || null;
+  }
+
+  return null;
+};
+
 const DEFAULT_PLANS = [
   {
     name: "Basic",
@@ -66,7 +78,17 @@ const ACTIVE_PLAN_NAMES = DEFAULT_PLANS.map((plan) => plan.name);
 
 const seedPlansIfEmpty = async () => {
   for (const planData of DEFAULT_PLANS) {
-    await Plan.findOneAndUpdate({ name: planData.name }, { $set: planData }, { upsert: true });
+    const stripePriceId = getStripePriceIdForPlan(planData.name);
+    await Plan.findOneAndUpdate(
+      { name: planData.name },
+      {
+        $set: {
+          ...planData,
+          ...(stripePriceId ? { stripePriceId } : {}),
+        },
+      },
+      { upsert: true },
+    );
   }
 
   await Plan.updateMany(
@@ -97,8 +119,8 @@ const assignBasicPlanToUser = async (userId, session = null) => {
   const end = new Date(start);
   end.setFullYear(end.getFullYear() + 100);
 
-  const cancelFilter = { userId, status: "ACTIVE" };
-  const cancelUpdate = { $set: { status: "CANCELLED" } };
+  const cancelFilter = { userId, status: { $in: ["ACTIVE", "PAST_DUE"] } };
+  const cancelUpdate = { $set: { status: "CANCELLED", updatedAt: new Date() } };
 
   if (session) {
     await Subscription.updateMany(cancelFilter, cancelUpdate, { session });
@@ -112,11 +134,20 @@ const assignBasicPlanToUser = async (userId, session = null) => {
       {
         userId,
         planId: basicPlan._id,
+        pendingPlanId: null,
         startDate: start,
         endDate: end,
+        currentPeriodStart: start,
+        currentPeriodEnd: end,
         amountPaid: 0,
         paymentProvider: null,
+        stripeCustomerId: null,
+        stripeSubscriptionId: null,
+        stripeSubscriptionItemId: null,
+        stripePriceId: null,
+        cancelAtPeriodEnd: false,
         status: "ACTIVE",
+        updatedAt: start,
       },
     ],
     createOptions,
@@ -145,7 +176,7 @@ const getEffectivePlanForUser = async (userId) => {
 
   if (user.subscriptionId) {
     const subscription = await Subscription.findById(user.subscriptionId).lean();
-    if (subscription?.status === "ACTIVE") {
+    if (subscription && ["ACTIVE", "PAST_DUE"].includes(subscription.status)) {
       const plan = await Plan.findById(subscription.planId).lean();
       if (plan?.isActive) {
         return { plan, subscription };
@@ -177,18 +208,19 @@ const buildPlansCatalogForUser = async (userId = null) => {
     selected: selectedPlanId ? item._id.toString() === selectedPlanId : false,
   }));
 
-  if (
-    subscription &&
-    plan?.name === BASIC_PLAN_NAME &&
-    subscription.paymentProvider
-  ) {
-    await Subscription.findByIdAndUpdate(subscription._id, {
-      $set: { paymentProvider: null },
-    });
-    subscription.paymentProvider = null;
+  let pendingPlan = null;
+  if (subscription?.pendingPlanId) {
+    pendingPlan = await Plan.findById(subscription.pendingPlanId).lean();
   }
 
-  return { plans, plan, subscription, selectedPlanId };
+  return {
+    plans,
+    plan,
+    subscription,
+    pendingPlan,
+    selectedPlanId,
+    walletCount: userId ? await countUserWallets(userId) : 0,
+  };
 };
 
 const countUserWallets = async (userId) => {
@@ -217,7 +249,11 @@ const assertCanCreateWallet = async (userId) => {
 
   const current = await countUserWallets(userId);
   if (current >= plan.maxWallets) {
-    const err = new Error(`Wallet limit reached for your plan (${plan.maxWallets})`);
+    const limitLabel =
+      plan.maxWallets >= 9999 ? "unlimited" : String(plan.maxWallets);
+    const err = new Error(
+      `Wallet limit reached for your plan (${limitLabel})`,
+    );
     err.statusCode = 403;
     throw err;
   }

@@ -93,6 +93,12 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    stripeCustomerId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
     lastLoginAt: {
       type: Date,
       default: null,

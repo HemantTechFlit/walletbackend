@@ -5,9 +5,13 @@ const WalletTransaction = require("../models/WalletTransaction");
 const Wallet = require("../models/Wallet");
 const User = require("../models/User");
 const TransactionCategory = require("../models/TransactionCategory");
-const Attachment = require("../models/Attachment");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
-const { uploadReceipt } = require("../utils/r2Storage");
+const {
+  assertCanUploadReceipt,
+  getReplacingReceiptBytes,
+  deleteReceiptAttachmentsForTransactions,
+  createReceiptAttachment,
+} = require("../utils/receiptUpload");
 const {
   aggregateBalancesByWalletIds,
   assertSufficientWalletBalance,
@@ -46,47 +50,6 @@ const getOrCreateTransferCategory = async (userId, session) => {
 
 const assertOwnWallet = (userId, walletId, session) =>
   Wallet.findOne({ _id: walletId, userId, isDeleted: false }).session(session);
-
-const createReceiptAttachment = async ({ userId, transactionId, file, session }) => {
-  if (!file) {
-    return null;
-  }
-
-  const uploaded = await uploadReceipt({
-    buffer: file.buffer,
-    mimeType: file.mimetype,
-    originalName: file.originalname,
-    userId,
-  });
-
-  const attachments = await Attachment.create(
-    [
-      {
-        userId,
-        transactionId,
-        fileUrl: uploaded.url,
-        storageKey: uploaded.key,
-        originalName: file.originalname,
-        fileType: file.mimetype,
-        fileSize: file.size,
-        purpose: "RECEIPT",
-      },
-    ],
-    { session },
-  );
-
-  const attachment = attachments[0];
-
-  return {
-    attachmentId: attachment._id,
-    fileUrl: attachment.fileUrl,
-    storageKey: attachment.storageKey,
-    originalName: attachment.originalName,
-    fileType: attachment.fileType,
-    fileSize: attachment.fileSize,
-    uploadedAt: attachment.uploadedAt,
-  };
-};
 
 const listTransfers = async (req, res) => {
   try {
@@ -140,6 +103,14 @@ const createTransfer = async (req, res) => {
     }
     if (amount === undefined || Number(amount) <= 0 || Number.isNaN(Number(amount))) {
       return errorResponse(res, "amount must be a positive number", 400);
+    }
+
+    if (req.file) {
+      try {
+        await assertCanUploadReceipt(userId, req.file.size);
+      } catch (error) {
+        return errorResponse(res, error.message, error.statusCode || 403);
+      }
     }
 
     session.startTransaction();
@@ -232,6 +203,7 @@ const createTransfer = async (req, res) => {
       transactionId: debitTx[0]._id,
       file: req.file,
       session,
+      replaceTransactionIds: [],
     });
 
     if (receipt) {
@@ -365,6 +337,23 @@ const updateTransfer = async (req, res) => {
       return errorResponse(res, "Transfer not found", 404);
     }
 
+    if (req.file) {
+      try {
+        const replacingBytes = await getReplacingReceiptBytes({
+          userId,
+          transactionIds: [transfer.debitTransactionId],
+          session,
+        });
+        await assertCanUploadReceipt(userId, req.file.size, {
+          replacingBytes,
+          session,
+        });
+      } catch (error) {
+        await session.abortTransaction();
+        return errorResponse(res, error.message, error.statusCode || 403);
+      }
+    }
+
     const nextFromWalletId = fromWalletId ?? transfer.fromWalletId;
     const nextToWalletId = toWalletId ?? transfer.toWalletId;
     const nextAmount = parsedAmount ?? transfer.amount;
@@ -458,15 +447,11 @@ const updateTransfer = async (req, res) => {
       transfer.set("receipt", undefined);
       debitTx.set("receipt", undefined);
       creditTx.set("receipt", undefined);
-      await Attachment.updateMany(
-        {
-          transactionId: { $in: [debitTx._id, creditTx._id] },
-          userId,
-          purpose: "RECEIPT",
-        },
-        { $set: { transactionId: null } },
-        { session },
-      );
+      await deleteReceiptAttachmentsForTransactions({
+        userId,
+        transactionIds: [debitTx._id],
+        session,
+      });
     }
 
     const receipt = await createReceiptAttachment({
@@ -474,6 +459,7 @@ const updateTransfer = async (req, res) => {
       transactionId: debitTx._id,
       file: req.file,
       session,
+      replaceTransactionIds: req.file ? [debitTx._id] : [],
     });
 
     if (receipt) {

@@ -43,6 +43,17 @@ const planSchema = new mongoose.Schema(
       default: 100,
     },
 
+    stripeProductId: {
+      type: String,
+      default: null,
+    },
+
+    stripePriceId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
     features: [String],
 
     isActive: {

@@ -3,9 +3,13 @@ const mongoose = require("mongoose");
 const WalletTransaction = require("../models/WalletTransaction");
 const Wallet = require("../models/Wallet");
 const TransactionCategory = require("../models/TransactionCategory");
-const Attachment = require("../models/Attachment");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
-const { uploadReceipt } = require("../utils/r2Storage");
+const {
+  assertCanUploadReceipt,
+  getReplacingReceiptBytes,
+  deleteReceiptAttachmentsForTransactions,
+  createReceiptAttachment,
+} = require("../utils/receiptUpload");
 const {
   aggregateBalancesByWalletIds,
   assertSufficientWalletBalance,
@@ -34,40 +38,6 @@ const assertCategoryForUser = async (userId, categoryId) =>
     userId,
     isDeleted: false,
   });
-
-const createReceiptAttachment = async ({ userId, transactionId, file }) => {
-  if (!file) {
-    return null;
-  }
-
-  const uploaded = await uploadReceipt({
-    buffer: file.buffer,
-    mimeType: file.mimetype,
-    originalName: file.originalname,
-    userId,
-  });
-
-  const attachment = await Attachment.create({
-    userId,
-    transactionId,
-    fileUrl: uploaded.url,
-    storageKey: uploaded.key,
-    originalName: file.originalname,
-    fileType: file.mimetype,
-    fileSize: file.size,
-    purpose: "RECEIPT",
-  });
-
-  return {
-    attachmentId: attachment._id,
-    fileUrl: attachment.fileUrl,
-    storageKey: attachment.storageKey,
-    originalName: attachment.originalName,
-    fileType: attachment.fileType,
-    fileSize: attachment.fileSize,
-    uploadedAt: attachment.uploadedAt,
-  };
-};
 
 const listTransactions = async (req, res) => {
   try {
@@ -220,6 +190,14 @@ const createTransaction = async (req, res) => {
       }
     }
 
+    if (req.file) {
+      try {
+        await assertCanUploadReceipt(userId, req.file.size);
+      } catch (error) {
+        return errorResponse(res, error.message, error.statusCode || 403);
+      }
+    }
+
     const doc = await WalletTransaction.create({
       userId,
       walletId,
@@ -240,6 +218,7 @@ const createTransaction = async (req, res) => {
       userId,
       transactionId: doc._id,
       file: req.file,
+      replaceTransactionIds: [],
     });
 
     if (receipt) {
@@ -335,6 +314,18 @@ const updateTransaction = async (req, res) => {
       return errorResponse(res, "Transaction not found", 404);
     }
 
+    if (req.file) {
+      try {
+        const replacingBytes = await getReplacingReceiptBytes({
+          userId,
+          transactionIds: [transaction._id],
+        });
+        await assertCanUploadReceipt(userId, req.file.size, { replacingBytes });
+      } catch (error) {
+        return errorResponse(res, error.message, error.statusCode || 403);
+      }
+    }
+
     if (walletId !== undefined && !mongoose.isValidObjectId(walletId)) {
       return errorResponse(res, "Valid walletId is required", 400);
     }
@@ -414,16 +405,17 @@ const updateTransaction = async (req, res) => {
 
     if (removeReceipt === true || removeReceipt === "true") {
       transaction.set("receipt", undefined);
-      await Attachment.updateMany(
-        { transactionId: transaction._id, userId, purpose: "RECEIPT" },
-        { $set: { transactionId: null } },
-      );
+      await deleteReceiptAttachmentsForTransactions({
+        userId,
+        transactionIds: [transaction._id],
+      });
     }
 
     const receipt = await createReceiptAttachment({
       userId,
       transactionId: transaction._id,
       file: req.file,
+      replaceTransactionIds: req.file ? [transaction._id] : [],
     });
 
     if (receipt) {
