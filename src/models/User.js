@@ -99,6 +99,11 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
 
+    receiptRetentionStartedAt: {
+      type: Date,
+      default: null,
+    },
+
     lastLoginAt: {
       type: Date,
       default: null,

@@ -38,7 +38,12 @@ const reportSchema = new mongoose.Schema(
 
     fileUrl: {
       type: String,
-      required: true,
+      default: null,
+    },
+
+    reportData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
     },
 
     generatedAt: {

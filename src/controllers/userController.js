@@ -16,6 +16,7 @@ const Report = require("../models/Report");
 const AuditLog = require("../models/AuditLog");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { getEffectivePlanForUser } = require("../utils/planLimits");
+const { buildReceiptRetentionWarnings } = require("../utils/receiptUpload");
 const { uploadProfileImage } = require("../utils/r2Storage");
 
 const syncUserSelectionsFromDb = async (userId) => {
@@ -65,10 +66,17 @@ const getMe = async (req, res) => {
     userPayload.selectedCategories = categories;
 
     const { plan } = await getEffectivePlanForUser(userId);
+    const subscription = userPayload.subscriptionId || null;
+    const warnings = await buildReceiptRetentionWarnings(
+      userPayload,
+      plan,
+      subscription,
+    );
 
     return successResponse(res, "User fetched successfully", {
       user: userPayload,
       plan,
+      warnings,
     });
   } catch (error) {
     return errorResponse(res, error.message);

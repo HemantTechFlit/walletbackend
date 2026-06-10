@@ -19,6 +19,7 @@ const stripeWebhookRoutes = require("./routes/stripeWebhookRoutes");
 const plannedPaymentRoutes = require("./routes/plannedPaymentRoutes");
 const supportRoutes = require("./routes/supportRoutes");
 const appSettingsRoutes = require("./routes/appSettingsRoutes");
+const { startReceiptPurgeCron } = require("./jobs/receiptPurgeCron");
 
 const app = express();
 connectDB();
@@ -71,4 +72,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`Swagger /api/docs`);
+  startReceiptPurgeCron();
 });

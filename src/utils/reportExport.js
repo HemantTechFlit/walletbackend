@@ -193,8 +193,84 @@ const buildPdfBuffer = (rows, { fromDate, toDate }) =>
     doc.end();
   });
 
+const toIsoDate = (value) =>
+  value?.toISOString?.() ?? (value ? String(value) : null);
+
+const buildTransactionRowJson = (row) => ({
+  id: String(row._id),
+  walletId: row.walletId ? String(row.walletId) : null,
+  categoryId: row.categoryId ? String(row.categoryId) : null,
+  type: row.type ?? null,
+  amount: row.amount ?? null,
+  title: row.title ?? null,
+  description: row.description ?? null,
+  transactionDate: toIsoDate(row.transactionDate),
+  walletName: row.walletSnapshot?.walletName ?? null,
+  categoryName: row.categorySnapshot?.name ?? null,
+  receiptUrl: row.receipt?.fileUrl ?? null,
+  receiptFileName: row.receipt?.originalName ?? null,
+  receiptFileType: row.receipt?.fileType ?? null,
+});
+
+const buildReportJson = (rows, { reportType, fromDate, toDate }) => {
+  const base = {
+    reportType,
+    fromDate: toIsoDate(fromDate),
+    toDate: toIsoDate(toDate),
+  };
+
+  if (reportType === "RECEIPTS_CSV") {
+    return {
+      ...base,
+      headers: [
+        "transactionId",
+        "walletId",
+        "categoryId",
+        "type",
+        "amount",
+        "title",
+        "transactionDate",
+        "receiptFileName",
+        "receiptFileType",
+        "receiptUrl",
+      ],
+      rows: rows
+        .filter((row) => row.receipt?.fileUrl)
+        .map((row) => ({
+          transactionId: String(row._id),
+          walletId: row.walletId ? String(row.walletId) : null,
+          categoryId: row.categoryId ? String(row.categoryId) : null,
+          type: row.type ?? null,
+          amount: row.amount ?? null,
+          title: row.title ?? null,
+          transactionDate: toIsoDate(row.transactionDate),
+          receiptFileName: row.receipt?.originalName ?? null,
+          receiptFileType: row.receipt?.fileType ?? null,
+          receiptUrl: row.receipt?.fileUrl ?? null,
+        })),
+    };
+  }
+
+  return {
+    ...base,
+    headers: [
+      "id",
+      "walletId",
+      "categoryId",
+      "type",
+      "amount",
+      "title",
+      "description",
+      "transactionDate",
+      "receiptUrl",
+    ],
+    rows: rows.map(buildTransactionRowJson),
+  };
+};
+
 module.exports = {
   buildCsv,
   buildReceiptsCsv,
   buildPdfBuffer,
+  buildReportJson,
 };

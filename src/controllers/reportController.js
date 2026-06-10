@@ -8,12 +8,7 @@ const Wallet = require("../models/Wallet");
 const WalletTransaction = require("../models/WalletTransaction");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { assertCanCreateReport } = require("../utils/planLimits");
-const {
-  buildCsv,
-  buildPdfBuffer,
-  buildReceiptsCsv,
-} = require("../utils/reportExport");
-const { uploadReport } = require("../utils/r2Storage");
+const { buildReportJson } = require("../utils/reportExport");
 
 const STORAGE_DIR = path.join(__dirname, "..", "..", "storage", "reports");
 
@@ -122,30 +117,10 @@ const createReport = async (req, res) => {
       .sort({ transactionDate: -1 })
       .lean();
 
-    let buffer;
-    let mimeType;
-    let extension;
-
-    if (type === "PDF") {
-      buffer = await buildPdfBuffer(rows, { fromDate: from, toDate: to });
-      mimeType = "application/pdf";
-      extension = "pdf";
-    } else if (type === "RECEIPTS_CSV") {
-      buffer = Buffer.from(buildReceiptsCsv(rows), "utf8");
-      mimeType = "text/csv";
-      extension = "csv";
-    } else {
-      buffer = Buffer.from(buildCsv(rows), "utf8");
-      mimeType = "text/csv";
-      extension = "csv";
-    }
-
-    const fileName = `report-${userId}-${Date.now()}.${extension}`;
-    const fileUrl = await uploadReport({
-      buffer,
-      mimeType,
-      fileName,
-      userId,
+    const reportData = buildReportJson(rows, {
+      reportType: type,
+      fromDate: from,
+      toDate: to,
     });
 
     const report = await Report.create({
@@ -155,10 +130,18 @@ const createReport = async (req, res) => {
       fromDate: from,
       toDate: to,
       filters,
-      fileUrl,
+      reportData,
     });
 
-    return successResponse(res, "Report generated successfully", report, 201);
+    return successResponse(
+      res,
+      "Report generated successfully",
+      {
+        ...report.toObject(),
+        reportData,
+      },
+      201,
+    );
   } catch (error) {
     const code = error.statusCode || 500;
     return errorResponse(res, error.message, code);
@@ -206,6 +189,18 @@ const downloadReport = async (req, res) => {
 
     if (!report) {
       return errorResponse(res, "Report not found", 404);
+    }
+
+    if (report.reportData) {
+      return successResponse(res, "Report fetched successfully", {
+        id: report._id,
+        reportType: report.reportType,
+        fromDate: report.fromDate,
+        toDate: report.toDate,
+        filters: report.filters,
+        generatedAt: report.generatedAt,
+        reportData: report.reportData,
+      });
     }
 
     if (report.fileUrl?.startsWith("http")) {

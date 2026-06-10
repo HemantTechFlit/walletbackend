@@ -1,8 +1,15 @@
 const mongoose = require("mongoose");
 
 const Attachment = require("../models/Attachment");
-const { uploadReceipt } = require("./r2Storage");
-const { getEffectivePlanForUser } = require("./planLimits");
+const WalletTransaction = require("../models/WalletTransaction");
+const WalletTransfer = require("../models/WalletTransfer");
+const User = require("../models/User");
+const { uploadReceipt, deleteFromR2 } = require("./r2Storage");
+const {
+  getEffectivePlanForUser,
+  getBasicPlan,
+  BASIC_PLAN_NAME,
+} = require("./planLimits");
 
 const RECEIPT_MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 
@@ -108,7 +115,127 @@ const deleteReceiptAttachmentsForTransactions = async ({
   };
   const options = session ? { session } : {};
 
+  let query = Attachment.find(filter).select("storageKey").lean();
+  if (session) {
+    query = query.session(session);
+  }
+
+  const attachments = await query;
+  await Promise.all(attachments.map((item) => deleteFromR2(item.storageKey)));
+
   await Attachment.deleteMany(filter, options);
+};
+
+const RECEIPT_RETENTION_DAYS = 30;
+
+const clearReceiptFieldsOnTransactions = async (
+  transactionIds,
+  session = null,
+) => {
+  if (!transactionIds?.length) {
+    return;
+  }
+
+  const update = {
+    $unset: { receipt: "" },
+    $set: { updatedAt: new Date() },
+  };
+  const options = session ? { session } : {};
+
+  await WalletTransaction.updateMany(
+    { _id: { $in: transactionIds } },
+    update,
+    options,
+  );
+
+  const transfers = await WalletTransfer.find({
+    debitTransactionId: { $in: transactionIds },
+  })
+    .select("creditTransactionId")
+    .lean();
+
+  const creditTransactionIds = transfers
+    .map((item) => item.creditTransactionId)
+    .filter(Boolean);
+
+  if (creditTransactionIds.length) {
+    await WalletTransaction.updateMany(
+      { _id: { $in: creditTransactionIds } },
+      update,
+      options,
+    );
+  }
+
+  await WalletTransfer.updateMany(
+    { debitTransactionId: { $in: transactionIds } },
+    update,
+    options,
+  );
+};
+
+const purgeExpiredReceiptsForBasicUsers = async () => {
+  const retentionCutoff = new Date(
+    Date.now() - RECEIPT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  );
+
+  const users = await User.find({
+    receiptRetentionStartedAt: { $ne: null },
+    isDeleted: false,
+  })
+    .select("_id subscriptionId")
+    .lean();
+
+  for (const user of users) {
+    const { plan } = await getEffectivePlanForUser(user._id);
+    if (!plan || plan.name !== BASIC_PLAN_NAME) {
+      continue;
+    }
+
+    const expiredAttachments = await Attachment.find({
+      userId: user._id,
+      purpose: "RECEIPT",
+      uploadedAt: { $lte: retentionCutoff },
+    })
+      .select("_id storageKey transactionId")
+      .lean();
+
+    if (!expiredAttachments.length) {
+      continue;
+    }
+
+    await Promise.all(
+      expiredAttachments.map((item) => deleteFromR2(item.storageKey)),
+    );
+
+    const attachmentIds = expiredAttachments.map((item) => item._id);
+    const transactionIds = expiredAttachments
+      .map((item) => item.transactionId)
+      .filter(Boolean);
+
+    await Attachment.deleteMany({ _id: { $in: attachmentIds } });
+    await clearReceiptFieldsOnTransactions(transactionIds);
+  }
+};
+
+const buildReceiptRetentionWarnings = async (user, plan, subscription) => {
+  const warnings = [];
+  const basicPlan = await getBasicPlan();
+  const pendingPlanId =
+    subscription?.pendingPlanId?._id || subscription?.pendingPlanId;
+  const movingToBasic =
+    pendingPlanId && String(pendingPlanId) === String(basicPlan._id);
+  const onBasicWithRetention =
+    plan?.name === BASIC_PLAN_NAME && user.receiptRetentionStartedAt;
+
+  if (movingToBasic || onBasicWithRetention) {
+    warnings.push({
+      type: "RECEIPT_DELETION",
+      message:
+        "When you are on the Basic plan, uploaded receipts will be automatically deleted 30 days after their upload date.",
+    });
+  }
+
+  return warnings;
 };
 
 const createReceiptAttachment = async ({
@@ -179,9 +306,12 @@ const createReceiptAttachment = async ({
 
 module.exports = {
   RECEIPT_MAX_FILE_SIZE_BYTES,
+  RECEIPT_RETENTION_DAYS,
   getUserReceiptStorageUsedBytes,
   getReplacingReceiptBytes,
   assertCanUploadReceipt,
   deleteReceiptAttachmentsForTransactions,
   createReceiptAttachment,
+  purgeExpiredReceiptsForBasicUsers,
+  buildReceiptRetentionWarnings,
 };

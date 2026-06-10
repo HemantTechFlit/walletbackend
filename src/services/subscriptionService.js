@@ -8,9 +8,10 @@ const {
   BASIC_PLAN_NAME,
   seedPlansIfEmpty,
   getBasicPlan,
-  countUserWallets,
   assignBasicPlanToUser,
   isPlanUpgrade,
+  markReceiptRetentionOnBasic,
+  clearReceiptRetention,
 } = require("../utils/planLimits");
 
 const STRIPE_PROVIDER = "stripe";
@@ -72,18 +73,6 @@ const assertPlanHasStripePrice = (plan) => {
       `Stripe price is not configured for the ${plan?.name || "selected"} plan`,
     );
     err.statusCode = 503;
-    throw err;
-  }
-};
-
-const assertCanSwitchToPlan = async (userId, targetPlan) => {
-  const walletCount = await countUserWallets(userId);
-
-  if (walletCount > targetPlan.maxWallets) {
-    const err = new Error(
-      `You have ${walletCount} wallets but the ${targetPlan.name} plan allows ${targetPlan.maxWallets}. Delete extra wallets before changing plans.`,
-    );
-    err.statusCode = 403;
     throw err;
   }
 };
@@ -170,8 +159,10 @@ const upsertSubscriptionRecord = async ({
 
   if (session) {
     await User.findByIdAndUpdate(userId, { $set: userUpdate }, { session });
+    await clearReceiptRetention(userId, session);
   } else {
     await User.findByIdAndUpdate(userId, { $set: userUpdate });
+    await clearReceiptRetention(userId);
   }
 
   return subscription;
@@ -217,6 +208,9 @@ const syncSubscriptionFromStripe = async (stripeSubscriptionId) => {
       const pendingPlan = await Plan.findById(existing.pendingPlanId).lean();
       existing.planId = pendingPlan?._id || plan._id;
       existing.pendingPlanId = null;
+      if (pendingPlan?.name === BASIC_PLAN_NAME) {
+        await markReceiptRetentionOnBasic(user._id);
+      }
     } else {
       existing.planId = plan._id;
       existing.pendingPlanId = null;
@@ -238,6 +232,11 @@ const syncSubscriptionFromStripe = async (stripeSubscriptionId) => {
     await User.findByIdAndUpdate(user._id, {
       $set: { subscriptionId: existing._id, updatedAt: now },
     });
+
+    const activePlan = await Plan.findById(existing.planId).lean();
+    if (activePlan && activePlan.name !== BASIC_PLAN_NAME) {
+      await clearReceiptRetention(user._id);
+    }
 
     return existing;
   }
@@ -263,7 +262,9 @@ const handleStripeSubscriptionDeleted = async (stripeSubscription) => {
     { $set: { status: "CANCELLED", updatedAt: new Date() } },
   );
 
-  return assignBasicPlanToUser(user._id);
+  await assignBasicPlanToUser(user._id);
+  await markReceiptRetentionOnBasic(user._id);
+  return null;
 };
 
 const fulfillCheckoutFromSession = async (session) => {
@@ -354,7 +355,9 @@ const fulfillCheckoutSession = async (sessionId) => {
   }
 
   const subscription = await fulfillCheckoutFromSession(session);
-  const populated = await Subscription.findById(subscription._id).populate("planId");
+  const populated = await Subscription.findById(subscription._id).populate(
+    "planId",
+  );
 
   return {
     sessionId: session.id,
@@ -385,7 +388,6 @@ const createCheckoutSession = async ({ userId, planId }) => {
   }
 
   assertPlanHasStripePrice(plan);
-  await assertCanSwitchToPlan(userId, plan);
 
   const activeSubscription = user.subscriptionId
     ? await Subscription.findById(user.subscriptionId).lean()
@@ -480,7 +482,6 @@ const changeSubscriptionPlan = async ({ userId, planId }) => {
   }
 
   assertPlanHasStripePrice(newPlan);
-  await assertCanSwitchToPlan(userId, newPlan);
 
   const stripe = getStripeClient();
   const stripeSub = await stripe.subscriptions.retrieve(
@@ -534,6 +535,7 @@ const changeSubscriptionPlan = async ({ userId, planId }) => {
     }
     subscription.updatedAt = new Date();
     await subscription.save();
+    await clearReceiptRetention(userId);
   } else {
     subscription.pendingPlanId = newPlan._id;
     subscription.cancelAtPeriodEnd = false;
@@ -541,7 +543,9 @@ const changeSubscriptionPlan = async ({ userId, planId }) => {
     await subscription.save();
   }
 
-  const populated = await Subscription.findById(subscription._id).populate("planId");
+  const populated = await Subscription.findById(subscription._id).populate(
+    "planId",
+  );
 
   return {
     subscription: populated,
@@ -572,9 +576,9 @@ const cancelSubscription = async (userId) => {
   }
 
   const basicPlan = await getBasicPlan();
-  await assertCanSwitchToPlan(userId, basicPlan);
 
   const stripe = getStripeClient();
+
   const updatedStripeSub = await stripe.subscriptions.update(
     subscription.stripeSubscriptionId,
     {
@@ -605,8 +609,11 @@ const cancelSubscription = async (userId) => {
 
   subscription.updatedAt = new Date();
   await subscription.save();
+  await markReceiptRetentionOnBasic(userId);
 
-  const populated = await Subscription.findById(subscription._id).populate("planId");
+  const populated = await Subscription.findById(subscription._id).populate(
+    "planId",
+  );
 
   return {
     subscription: populated,
@@ -645,8 +652,11 @@ const reactivateSubscription = async (userId) => {
   subscription.pendingPlanId = null;
   subscription.updatedAt = new Date();
   await subscription.save();
+  await clearReceiptRetention(userId);
 
-  const populated = await Subscription.findById(subscription._id).populate("planId");
+  const populated = await Subscription.findById(subscription._id).populate(
+    "planId",
+  );
 
   return {
     subscription: populated,
@@ -668,5 +678,4 @@ module.exports = {
   changeSubscriptionPlan,
   cancelSubscription,
   reactivateSubscription,
-  assertCanSwitchToPlan,
 };

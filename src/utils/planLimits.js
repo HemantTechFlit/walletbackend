@@ -22,7 +22,8 @@ const getStripePriceIdForPlan = (planName) => {
     Premium: process.env.STRIPE_PRICE_PREMIUM,
     "Premium+": process.env.STRIPE_PRICE_PREMIUM_PLUS,
     [YEARLY_PREMIUM_PLAN_NAME]: process.env.STRIPE_PRICE_PREMIUM_YEARLY,
-    [YEARLY_PREMIUM_PLUS_PLAN_NAME]: process.env.STRIPE_PRICE_PREMIUM_PLUS_YEARLY,
+    [YEARLY_PREMIUM_PLUS_PLAN_NAME]:
+      process.env.STRIPE_PRICE_PREMIUM_PLUS_YEARLY,
   };
 
   return priceMap[planName] || null;
@@ -34,7 +35,8 @@ const getStripeProductIdForPlan = (planName) => {
     Premium: process.env.STRIPE_PRODUCT_PREMIUM,
     "Premium+": process.env.STRIPE_PRODUCT_PREMIUM_PLUS,
     [YEARLY_PREMIUM_PLAN_NAME]: process.env.STRIPE_PRODUCT_PREMIUM_YEARLY,
-    [YEARLY_PREMIUM_PLUS_PLAN_NAME]: process.env.STRIPE_PRODUCT_PREMIUM_PLUS_YEARLY,
+    [YEARLY_PREMIUM_PLUS_PLAN_NAME]:
+      process.env.STRIPE_PRODUCT_PREMIUM_PLUS_YEARLY,
   };
 
   return productMap[planName] || null;
@@ -81,19 +83,22 @@ const sortPlansForDisplay = (plans) =>
       PLAN_DISPLAY_ORDER.indexOf(a.name) - PLAN_DISPLAY_ORDER.indexOf(b.name),
   );
 
+const UNLIMITED_WALLETS = 999999;
+const UNLIMITED_REPORTS = 999999;
+
 const DEFAULT_PLANS = [
   {
     name: "Basic",
     price: 0,
     currency: "AUD",
     billingType: "LIFETIME",
-    maxWallets: 2,
+    maxWallets: UNLIMITED_WALLETS,
     adsEnabled: true,
     monthlyReportLimit: 1,
     cloudStorageLimitMB: 0,
     features: [
       "Ads enabled",
-      "2 Wallets",
+      "Unlimited Wallets",
       "No Receipt Upload",
       "1 Report a month",
     ],
@@ -104,16 +109,16 @@ const DEFAULT_PLANS = [
     price: 3,
     currency: "AUD",
     billingType: "MONTHLY",
-    maxWallets: 10,
+    maxWallets: UNLIMITED_WALLETS,
     adsEnabled: false,
-    monthlyReportLimit: 9999,
-    cloudStorageLimitMB: 1024,
+    monthlyReportLimit: 5,
+    cloudStorageLimitMB: 300,
     features: [
       "No ADS",
-      "10 Wallets",
+      "Unlimited Wallets",
       "Receipt Upload",
-      "1 GB Receipt Storage",
-      "Unlimited Reports",
+      "300 MB Receipt Storage",
+      "5 Reports a month",
     ],
     isActive: true,
   },
@@ -122,15 +127,15 @@ const DEFAULT_PLANS = [
     price: 10,
     currency: "AUD",
     billingType: "MONTHLY",
-    maxWallets: 9999,
+    maxWallets: UNLIMITED_WALLETS,
     adsEnabled: false,
-    monthlyReportLimit: 9999,
-    cloudStorageLimitMB: 999999,
+    monthlyReportLimit: UNLIMITED_REPORTS,
+    cloudStorageLimitMB: 5120,
     features: [
       "No ADS",
       "Unlimited Wallets",
       "Receipt Upload",
-      "Unlimited Receipt Storage",
+      "5 GB Receipt Storage",
       "Unlimited Reports",
     ],
     isActive: true,
@@ -140,16 +145,16 @@ const DEFAULT_PLANS = [
     price: 24,
     currency: "AUD",
     billingType: "YEARLY",
-    maxWallets: 10,
+    maxWallets: UNLIMITED_WALLETS,
     adsEnabled: false,
-    monthlyReportLimit: 9999,
-    cloudStorageLimitMB: 1024,
+    monthlyReportLimit: 5,
+    cloudStorageLimitMB: 300,
     features: [
       "No ADS",
-      "10 Wallets",
+      "Unlimited Wallets",
       "Receipt Upload",
-      "1 GB Receipt Storage",
-      "Unlimited Reports",
+      "300 MB Receipt Storage",
+      "5 Reports a month",
       "Billed yearly",
     ],
     isActive: true,
@@ -159,15 +164,15 @@ const DEFAULT_PLANS = [
     price: 60,
     currency: "AUD",
     billingType: "YEARLY",
-    maxWallets: 9999,
+    maxWallets: UNLIMITED_WALLETS,
     adsEnabled: false,
-    monthlyReportLimit: 9999,
-    cloudStorageLimitMB: 999999,
+    monthlyReportLimit: UNLIMITED_REPORTS,
+    cloudStorageLimitMB: 5120,
     features: [
       "No ADS",
       "Unlimited Wallets",
       "Receipt Upload",
-      "Unlimited Receipt Storage",
+      "5 GB Receipt Storage",
       "Unlimited Reports",
       "Billed yearly",
     ],
@@ -217,6 +222,30 @@ const getBasicPlan = async (session = null) => {
   return plan;
 };
 
+const markReceiptRetentionOnBasic = async (userId, session = null) => {
+  const update = {
+    $set: {
+      receiptRetentionStartedAt: new Date(),
+      updatedAt: new Date(),
+    },
+  };
+  const options = session ? { session } : {};
+
+  await User.findByIdAndUpdate(userId, update, options);
+};
+
+const clearReceiptRetention = async (userId, session = null) => {
+  const update = {
+    $set: {
+      receiptRetentionStartedAt: null,
+      updatedAt: new Date(),
+    },
+  };
+  const options = session ? { session } : {};
+
+  await User.findByIdAndUpdate(userId, update, options);
+};
+
 const assignBasicPlanToUser = async (userId, session = null) => {
   const basicPlan = await getBasicPlan(session);
   const start = new Date();
@@ -248,7 +277,8 @@ const assignBasicPlanToUser = async (userId, session = null) => {
         stripeCustomerId: null,
         stripeSubscriptionId: null,
         stripeSubscriptionItemId: null,
-        stripePriceId: basicPlan.stripePriceId || getStripePriceIdForPlan(BASIC_PLAN_NAME),
+        stripePriceId:
+          basicPlan.stripePriceId || getStripePriceIdForPlan(BASIC_PLAN_NAME),
         cancelAtPeriodEnd: false,
         status: "ACTIVE",
         updatedAt: start,
@@ -257,7 +287,10 @@ const assignBasicPlanToUser = async (userId, session = null) => {
     createOptions,
   );
 
-  const userUpdate = { subscriptionId: subscription._id, updatedAt: new Date() };
+  const userUpdate = {
+    subscriptionId: subscription._id,
+    updatedAt: new Date(),
+  };
   if (session) {
     await User.findByIdAndUpdate(userId, { $set: userUpdate }, { session });
   } else {
@@ -279,7 +312,9 @@ const getEffectivePlanForUser = async (userId) => {
   }
 
   if (user.subscriptionId) {
-    const subscription = await Subscription.findById(user.subscriptionId).lean();
+    const subscription = await Subscription.findById(
+      user.subscriptionId,
+    ).lean();
     if (subscription && ["ACTIVE", "PAST_DUE"].includes(subscription.status)) {
       const plan = await Plan.findById(subscription.planId).lean();
       if (plan?.isActive) {
@@ -347,22 +382,8 @@ const countReportsThisMonth = async (userId) => {
   });
 };
 
-const assertCanCreateWallet = async (userId) => {
-  const { plan } = await getEffectivePlanForUser(userId);
-  if (!plan) {
-    return;
-  }
-
-  const current = await countUserWallets(userId);
-  if (current >= plan.maxWallets) {
-    const limitLabel =
-      plan.maxWallets >= 9999 ? "unlimited" : String(plan.maxWallets);
-    const err = new Error(
-      `Wallet limit reached for your plan (${limitLabel})`,
-    );
-    err.statusCode = 403;
-    throw err;
-  }
+const assertCanCreateWallet = async () => {
+  // All plans allow unlimited wallets.
 };
 
 const assertCanCreateReport = async (userId) => {
@@ -371,12 +392,18 @@ const assertCanCreateReport = async (userId) => {
     return;
   }
 
-  // const used = await countReportsThisMonth(userId);
-  // if (used >= plan.monthlyReportLimit) {
-  //   const err = new Error(`Monthly report limit reached (${plan.monthlyReportLimit})`);
-  //   err.statusCode = 403;
-  //   throw err;
-  // }
+  if (plan.monthlyReportLimit >= UNLIMITED_REPORTS) {
+    return;
+  }
+
+  const used = await countReportsThisMonth(userId);
+  if (used >= plan.monthlyReportLimit) {
+    const err = new Error(
+      `Monthly report limit reached (${plan.monthlyReportLimit})`,
+    );
+    err.statusCode = 403;
+    throw err;
+  }
 };
 
 module.exports = {
@@ -394,7 +421,12 @@ module.exports = {
   assignBasicPlanToUser,
   getEffectivePlanForUser,
   buildPlansCatalogForUser,
+  UNLIMITED_WALLETS,
+  UNLIMITED_REPORTS,
+  markReceiptRetentionOnBasic,
+  clearReceiptRetention,
   assertCanCreateWallet,
   assertCanCreateReport,
   countUserWallets,
+  countReportsThisMonth,
 };

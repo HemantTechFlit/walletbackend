@@ -1,5 +1,5 @@
 const path = require("path");
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 
 const trimSlashes = (value) => String(value || "").replace(/^\/+|\/+$/g, "");
 
@@ -64,6 +64,23 @@ const uploadBufferToR2 = async ({
   };
 };
 
+const deleteFromR2 = async (storageKey) => {
+  if (!storageKey) {
+    return;
+  }
+
+  try {
+    await getR2Client().send(
+      new DeleteObjectCommand({
+        Bucket: getRequiredEnv("R2_BUCKET_NAME"),
+        Key: storageKey,
+      }),
+    );
+  } catch (error) {
+    console.error(`Failed to delete R2 object ${storageKey}:`, error.message);
+  }
+};
+
 const uploadProfileImage = async ({ buffer, mimeType, originalName, userId }) => {
   const ext = safeExtension(originalName, ".jpg");
   const fileName = `profile-${userId}-${Date.now()}${ext}`;
@@ -121,4 +138,5 @@ module.exports = {
   uploadReport,
   uploadSupportImage,
   uploadReceipt,
+  deleteFromR2,
 };
