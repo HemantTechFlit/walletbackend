@@ -11,30 +11,21 @@ const options = {
     },
     servers: [
       {
-        url: "https://expense-tracker-ip37.onrender.com",
-        description: "Expense Tracker API production server",
+        url: "http://localhost:3000",
+        description: "Local development server",
       },
     ],
     tags: [
       { name: "Auth", description: "Authentication APIs" },
       { name: "Onboarding", description: "Onboarding APIs" },
       { name: "Users", description: "Current user profile and preferences" },
-      {
-        name: "Wallets",
-        description: "User wallets (requires completed onboarding)",
-      },
+      { name: "Wallets", description: "User wallets (requires completed onboarding)" },
       { name: "Categories", description: "Transaction categories" },
       { name: "Transactions", description: "Income and expense entries" },
-      {
-        name: "Planned Payments",
-        description: "Manual planned income/expense reminders",
-      },
+      { name: "Planned Payments", description: "Manual planned income/expense reminders" },
       { name: "Transfers", description: "Wallet-to-wallet transfers" },
       { name: "Voice", description: "AI-assisted voice transaction drafts" },
-      {
-        name: "Reports",
-        description: "CSV/PDF reports uploaded to Google Drive",
-      },
+      { name: "Reports", description: "CSV/PDF reports uploaded to Google Drive" },
       {
         name: "Subscriptions",
         description: "User subscription and effective plan",
@@ -42,6 +33,10 @@ const options = {
       {
         name: "Support",
         description: "Help center, bug reports, and feature requests",
+      },
+      {
+        name: "App Settings",
+        description: "Mobile app configuration, ads, and URLs",
       },
     ],
     components: {
@@ -116,8 +111,7 @@ const options = {
             },
             currency: {
               type: "string",
-              description:
-                "Optional ISO 4217 currency code for first-time social users.",
+              description: "Optional ISO 4217 currency code for first-time social users.",
               example: "USD",
             },
           },
@@ -214,8 +208,7 @@ const options = {
             },
             removeProfileImage: {
               type: "boolean",
-              description:
-                "Set true to clear profileImage (multipart form field)",
+              description: "Set true to clear profileImage (multipart form field)",
             },
           },
         },
@@ -230,8 +223,7 @@ const options = {
             profileImage: {
               type: "string",
               format: "binary",
-              description:
-                "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
+              description: "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
             },
             removeProfileImage: {
               type: "string",
@@ -313,14 +305,18 @@ const options = {
         },
         CreateTransactionRequest: {
           type: "object",
-          required: ["walletId", "type", "amount", "title"],
+          required: [
+            "walletId",
+            "type",
+            "amount",
+            "title",
+          ],
           properties: {
             walletId: { type: "string" },
             categoryId: {
               type: "string",
               nullable: true,
-              description:
-                "Optional. If omitted, the transaction is created without a category.",
+              description: "Optional. If omitted, the transaction is created without a category.",
             },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: { type: "number", example: 99.5 },
@@ -355,8 +351,7 @@ const options = {
             categoryId: {
               type: "string",
               nullable: true,
-              description:
-                "Optional. If omitted, the transaction is created without a category.",
+              description: "Optional. If omitted, the transaction is created without a category.",
             },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: { type: "number", example: 99.5 },
@@ -639,7 +634,8 @@ const options = {
                 transactionType: {
                   type: "string",
                   enum: ["income", "expense", "INCOME", "EXPENSE"],
-                  description: "Filters transactions by type. Alias: type.",
+                  description:
+                    "Filters transactions by type. Alias: type.",
                 },
                 categoryId: { type: "string" },
               },
@@ -664,8 +660,7 @@ const options = {
             subject: { type: "string", example: "Unable to export report" },
             message: {
               type: "string",
-              example:
-                "I am getting an error when exporting my monthly report.",
+              example: "I am getting an error when exporting my monthly report.",
             },
             userId: {
               type: "string",
@@ -677,10 +672,7 @@ const options = {
           type: "object",
           required: ["subject", "msg"],
           properties: {
-            subject: {
-              type: "string",
-              example: "App crashes on wallet screen",
-            },
+            subject: { type: "string", example: "App crashes on wallet screen" },
             msg: {
               type: "string",
               example: "The app closes whenever I open wallet details.",
@@ -691,10 +683,7 @@ const options = {
           type: "object",
           required: ["subject", "msg"],
           properties: {
-            subject: {
-              type: "string",
-              example: "App crashes on wallet screen",
-            },
+            subject: { type: "string", example: "App crashes on wallet screen" },
             msg: {
               type: "string",
               example: "The app closes whenever I open wallet details.",
@@ -817,9 +806,7 @@ const options = {
           },
           responses: {
             200: { description: "Apple login successful with tokens" },
-            400: {
-              description: "Invalid token, missing email, or configuration",
-            },
+            400: { description: "Invalid token, missing email, or configuration" },
             403: { description: "User is not active" },
             500: { description: "Server error" },
           },
@@ -1053,9 +1040,7 @@ const options = {
             required: true,
             content: {
               "application/json": {
-                schema: {
-                  $ref: "#/components/schemas/SetDefaultWalletRequest",
-                },
+                schema: { $ref: "#/components/schemas/SetDefaultWalletRequest" },
               },
             },
           },
@@ -1389,10 +1374,7 @@ const options = {
           },
           responses: {
             200: { description: "Transaction updated" },
-            400: {
-              description:
-                "Validation failed, insufficient balance, or receipt exceeds 15 MB",
-            },
+            400: { description: "Validation failed, insufficient balance, or receipt exceeds 15 MB" },
             401: { description: "Unauthorized" },
             403: {
               description:
@@ -1479,9 +1461,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            404: {
-              description: "Planned payment, wallet, or category not found",
-            },
+            404: { description: "Planned payment, wallet, or category not found" },
             500: { description: "Server error" },
           },
         },
@@ -1497,8 +1477,7 @@ const options = {
               in: "path",
               required: true,
               schema: { type: "string" },
-              description:
-                "Planned payment id (plannedPaymentId), not the composite occurrence id.",
+              description: "Planned payment id (plannedPaymentId), not the composite occurrence id.",
             },
           ],
           responses: {
@@ -1633,9 +1612,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            404: {
-              description: "Planned payment, wallet, or category not found",
-            },
+            404: { description: "Planned payment, wallet, or category not found" },
             500: { description: "Server error" },
           },
         },
@@ -1653,8 +1630,7 @@ const options = {
               in: "path",
               required: true,
               schema: { type: "string" },
-              description:
-                "Planned payment id (plannedPaymentId), not the composite occurrence id.",
+              description: "Planned payment id (plannedPaymentId), not the composite occurrence id.",
             },
           ],
           requestBody: {
@@ -1669,9 +1645,7 @@ const options = {
           },
           responses: {
             200: { description: "Planned payment occurrence deleted" },
-            400: {
-              description: "Validation failed or occurrence already decided",
-            },
+            400: { description: "Validation failed or occurrence already decided" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             404: { description: "Planned payment not found" },
@@ -1771,9 +1745,7 @@ const options = {
               description:
                 "Onboarding not completed, receipt upload not allowed on free plan, or Premium storage limit reached",
             },
-            404: {
-              description: "Transfer, wallet, or linked transaction not found",
-            },
+            404: { description: "Transfer, wallet, or linked transaction not found" },
             500: { description: "Server error" },
           },
         },
@@ -1781,8 +1753,7 @@ const options = {
       "/api/voice/transaction-draft": {
         post: {
           tags: ["Voice"],
-          summary:
-            "Generate an AI transaction or transfer draft from transcript text",
+          summary: "Generate an AI transaction or transfer draft from transcript text",
           description:
             "Returns a confirmation draft only. The frontend should let the user confirm or edit it, then call the existing transaction or transfer create API.",
           security: [{ bearerAuth: [] }],
@@ -1801,9 +1772,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            503: {
-              description: "Local or self-hosted voice model unavailable",
-            },
+            503: { description: "Local or self-hosted voice model unavailable" },
             500: { description: "Server error" },
           },
         },
@@ -1963,10 +1932,7 @@ const options = {
           },
           responses: {
             200: { description: "Stripe checkout session created" },
-            400: {
-              description:
-                "Validation failed or active paid subscription already exists",
-            },
+            400: { description: "Validation failed or active paid subscription already exists" },
             401: { description: "Unauthorized" },
             403: { description: "Too many wallets for target plan" },
             404: { description: "Plan not found" },
@@ -1994,9 +1960,7 @@ const options = {
             200: { description: "Subscription activated" },
             400: { description: "Missing or incomplete checkout session" },
             401: { description: "Unauthorized" },
-            403: {
-              description: "Checkout session does not belong to this user",
-            },
+            403: { description: "Checkout session does not belong to this user" },
             500: { description: "Activation failed" },
           },
         },
@@ -2053,9 +2017,7 @@ const options = {
           security: [{ bearerAuth: [] }],
           responses: {
             200: { description: "Subscription reactivated" },
-            400: {
-              description: "Subscription is not scheduled for cancellation",
-            },
+            400: { description: "Subscription is not scheduled for cancellation" },
             401: { description: "Unauthorized" },
             404: { description: "Stripe subscription not found" },
             503: { description: "Stripe is not configured" },
@@ -2110,9 +2072,7 @@ const options = {
             required: true,
             content: {
               "multipart/form-data": {
-                schema: {
-                  $ref: "#/components/schemas/ReportBugMultipartRequest",
-                },
+                schema: { $ref: "#/components/schemas/ReportBugMultipartRequest" },
               },
               "application/json": {
                 schema: { $ref: "#/components/schemas/ReportBugRequest" },
@@ -2121,9 +2081,7 @@ const options = {
           },
           responses: {
             201: { description: "Bug report submitted" },
-            400: {
-              description: "Validation failed or attachment exceeds 3 MB",
-            },
+            400: { description: "Validation failed or attachment exceeds 3 MB" },
             401: { description: "Unauthorized" },
             404: { description: "User not found" },
             503: { description: "File storage is not configured" },
@@ -2153,9 +2111,7 @@ const options = {
           },
           responses: {
             201: { description: "Feature request submitted" },
-            400: {
-              description: "Validation failed or attachment exceeds 3 MB",
-            },
+            400: { description: "Validation failed or attachment exceeds 3 MB" },
             401: { description: "Unauthorized" },
             404: { description: "User not found" },
             503: { description: "File storage is not configured" },
@@ -2163,9 +2119,45 @@ const options = {
           },
         },
       },
+      "/api/app-settings": {
+        get: {
+          tags: ["App Settings"],
+          summary: "Get mobile app configuration",
+          description:
+            "Public endpoint for app version, AdMob configuration, and app URLs. No authentication required.",
+          responses: {
+            200: {
+              description: "App settings JSON",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      appJson: {
+                        type: "object",
+                        properties: {
+                          appConfig: {
+                            type: "object",
+                            properties: {
+                              version: { type: "string", example: "1.0.0" },
+                            },
+                          },
+                          adsConfig: { type: "object" },
+                          urlConfig: { type: "object" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            500: { description: "Server error" },
+          },
+        },
+      },
     },
   },
-  apis: ["../routes/*.js"],
+  apis: [],
 };
 
 const swaggerSpec = swaggerJsdoc(options);
