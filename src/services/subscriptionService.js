@@ -10,6 +10,7 @@ const {
   getBasicPlan,
   countUserWallets,
   assignBasicPlanToUser,
+  isPlanUpgrade,
 } = require("../utils/planLimits");
 
 const STRIPE_PROVIDER = "stripe";
@@ -150,7 +151,8 @@ const upsertSubscriptionRecord = async ({
     stripeSubscriptionId: stripeSub.id,
     stripeSubscriptionItemId: stripeItem?.id || null,
     stripePriceId: stripeItem?.price?.id || plan.stripePriceId || null,
-    amountPaid: (stripeItem?.price?.unit_amount || 0) / 100,
+    amountPaid:
+      (stripeItem?.price?.unit_amount || 0) / 100 || Number(plan.price) || 0,
     cancelAtPeriodEnd: Boolean(stripeSub.cancel_at_period_end),
     status: stripeSub.status === "active" ? "ACTIVE" : "PAST_DUE",
     updatedAt: now,
@@ -226,7 +228,8 @@ const syncSubscriptionFromStripe = async (stripeSubscriptionId) => {
     existing.currentPeriodEnd = endDate || existing.currentPeriodEnd;
     existing.stripeSubscriptionItemId = stripeItem?.id || null;
     existing.stripePriceId = stripeItem?.price?.id || null;
-    existing.amountPaid = (stripeItem?.price?.unit_amount || 0) / 100;
+    existing.amountPaid =
+      (stripeItem?.price?.unit_amount || 0) / 100 || Number(plan.price) || 0;
     existing.cancelAtPeriodEnd = Boolean(stripeSub.cancel_at_period_end);
     existing.status = stripeSub.status === "active" ? "ACTIVE" : "PAST_DUE";
     existing.updatedAt = now;
@@ -492,7 +495,7 @@ const changeSubscriptionPlan = async ({ userId, planId }) => {
     throw err;
   }
 
-  const isUpgrade = Number(newPlan.price) > Number(currentPlan?.price || 0);
+  const isUpgrade = isPlanUpgrade(currentPlan, newPlan);
 
   const updatedStripeSub = await stripe.subscriptions.update(
     subscription.stripeSubscriptionId,

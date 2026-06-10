@@ -5,18 +5,81 @@ const Report = require("../models/Report");
 const Subscription = require("../models/Subscription");
 
 const BASIC_PLAN_NAME = "Basic";
+const YEARLY_PREMIUM_PLAN_NAME = "Yearly Premium";
+const YEARLY_PREMIUM_PLUS_PLAN_NAME = "Yearly Premium+";
+
+const PLAN_DISPLAY_ORDER = [
+  BASIC_PLAN_NAME,
+  "Premium",
+  "Premium+",
+  YEARLY_PREMIUM_PLAN_NAME,
+  YEARLY_PREMIUM_PLUS_PLAN_NAME,
+];
 
 const getStripePriceIdForPlan = (planName) => {
-  if (planName === "Premium") {
-    return process.env.STRIPE_PRICE_PREMIUM || null;
-  }
+  const priceMap = {
+    [BASIC_PLAN_NAME]: process.env.STRIPE_PRICE_BASIC,
+    Premium: process.env.STRIPE_PRICE_PREMIUM,
+    "Premium+": process.env.STRIPE_PRICE_PREMIUM_PLUS,
+    [YEARLY_PREMIUM_PLAN_NAME]: process.env.STRIPE_PRICE_PREMIUM_YEARLY,
+    [YEARLY_PREMIUM_PLUS_PLAN_NAME]: process.env.STRIPE_PRICE_PREMIUM_PLUS_YEARLY,
+  };
 
-  if (planName === "Premium+") {
-    return process.env.STRIPE_PRICE_PREMIUM_PLUS || null;
-  }
-
-  return null;
+  return priceMap[planName] || null;
 };
+
+const getStripeProductIdForPlan = (planName) => {
+  const productMap = {
+    [BASIC_PLAN_NAME]: process.env.STRIPE_PRODUCT_BASIC,
+    Premium: process.env.STRIPE_PRODUCT_PREMIUM,
+    "Premium+": process.env.STRIPE_PRODUCT_PREMIUM_PLUS,
+    [YEARLY_PREMIUM_PLAN_NAME]: process.env.STRIPE_PRODUCT_PREMIUM_YEARLY,
+    [YEARLY_PREMIUM_PLUS_PLAN_NAME]: process.env.STRIPE_PRODUCT_PREMIUM_PLUS_YEARLY,
+  };
+
+  return productMap[planName] || null;
+};
+
+const getPlanTier = (plan) => {
+  if (!plan) {
+    return 0;
+  }
+
+  if (plan.name === BASIC_PLAN_NAME || Number(plan.price) === 0) {
+    return 0;
+  }
+
+  if (plan.name === "Premium" || plan.name === YEARLY_PREMIUM_PLAN_NAME) {
+    return 1;
+  }
+
+  if (plan.name === "Premium+" || plan.name === YEARLY_PREMIUM_PLUS_PLAN_NAME) {
+    return 2;
+  }
+
+  return 0;
+};
+
+const isPlanUpgrade = (currentPlan, newPlan) => {
+  const currentTier = getPlanTier(currentPlan);
+  const newTier = getPlanTier(newPlan);
+
+  if (newTier > currentTier) {
+    return true;
+  }
+
+  if (newTier < currentTier) {
+    return false;
+  }
+
+  return Number(newPlan?.price || 0) > Number(currentPlan?.price || 0);
+};
+
+const sortPlansForDisplay = (plans) =>
+  [...plans].sort(
+    (a, b) =>
+      PLAN_DISPLAY_ORDER.indexOf(a.name) - PLAN_DISPLAY_ORDER.indexOf(b.name),
+  );
 
 const DEFAULT_PLANS = [
   {
@@ -38,7 +101,7 @@ const DEFAULT_PLANS = [
   },
   {
     name: "Premium",
-    price: 2,
+    price: 3,
     currency: "AUD",
     billingType: "MONTHLY",
     maxWallets: 10,
@@ -56,7 +119,7 @@ const DEFAULT_PLANS = [
   },
   {
     name: "Premium+",
-    price: 5,
+    price: 10,
     currency: "AUD",
     billingType: "MONTHLY",
     maxWallets: 9999,
@@ -72,6 +135,44 @@ const DEFAULT_PLANS = [
     ],
     isActive: true,
   },
+  {
+    name: YEARLY_PREMIUM_PLAN_NAME,
+    price: 24,
+    currency: "AUD",
+    billingType: "YEARLY",
+    maxWallets: 10,
+    adsEnabled: false,
+    monthlyReportLimit: 9999,
+    cloudStorageLimitMB: 1024,
+    features: [
+      "No ADS",
+      "10 Wallets",
+      "Receipt Upload",
+      "1 GB Receipt Storage",
+      "Unlimited Reports",
+      "Billed yearly",
+    ],
+    isActive: true,
+  },
+  {
+    name: YEARLY_PREMIUM_PLUS_PLAN_NAME,
+    price: 60,
+    currency: "AUD",
+    billingType: "YEARLY",
+    maxWallets: 9999,
+    adsEnabled: false,
+    monthlyReportLimit: 9999,
+    cloudStorageLimitMB: 999999,
+    features: [
+      "No ADS",
+      "Unlimited Wallets",
+      "Receipt Upload",
+      "Unlimited Receipt Storage",
+      "Unlimited Reports",
+      "Billed yearly",
+    ],
+    isActive: true,
+  },
 ];
 
 const ACTIVE_PLAN_NAMES = DEFAULT_PLANS.map((plan) => plan.name);
@@ -79,12 +180,15 @@ const ACTIVE_PLAN_NAMES = DEFAULT_PLANS.map((plan) => plan.name);
 const seedPlansIfEmpty = async () => {
   for (const planData of DEFAULT_PLANS) {
     const stripePriceId = getStripePriceIdForPlan(planData.name);
+    const stripeProductId = getStripeProductIdForPlan(planData.name);
+
     await Plan.findOneAndUpdate(
       { name: planData.name },
       {
         $set: {
           ...planData,
           ...(stripePriceId ? { stripePriceId } : {}),
+          ...(stripeProductId ? { stripeProductId } : {}),
         },
       },
       { upsert: true },
@@ -144,7 +248,7 @@ const assignBasicPlanToUser = async (userId, session = null) => {
         stripeCustomerId: null,
         stripeSubscriptionId: null,
         stripeSubscriptionItemId: null,
-        stripePriceId: null,
+        stripePriceId: basicPlan.stripePriceId || getStripePriceIdForPlan(BASIC_PLAN_NAME),
         cancelAtPeriodEnd: false,
         status: "ACTIVE",
         updatedAt: start,
@@ -202,7 +306,9 @@ const buildPlansCatalogForUser = async (userId = null) => {
     selectedPlanId = plan?._id?.toString() || null;
   }
 
-  const allPlans = await Plan.find({ isActive: true }).sort({ price: 1 }).lean();
+  const allPlans = sortPlansForDisplay(
+    await Plan.find({ isActive: true }).lean(),
+  );
   const plans = allPlans.map((item) => ({
     ...item,
     selected: selectedPlanId ? item._id.toString() === selectedPlanId : false,
@@ -275,6 +381,14 @@ const assertCanCreateReport = async (userId) => {
 
 module.exports = {
   BASIC_PLAN_NAME,
+  YEARLY_PREMIUM_PLAN_NAME,
+  YEARLY_PREMIUM_PLUS_PLAN_NAME,
+  PLAN_DISPLAY_ORDER,
+  getStripePriceIdForPlan,
+  getStripeProductIdForPlan,
+  getPlanTier,
+  isPlanUpgrade,
+  sortPlansForDisplay,
   seedPlansIfEmpty,
   getBasicPlan,
   assignBasicPlanToUser,
