@@ -16,8 +16,47 @@ const {
   aggregateBalancesByWalletIds,
   assertSufficientWalletBalance,
 } = require("../utils/walletBalance");
+const { resolveConversionAmounts } = require("../utils/currencyConversion");
 
 const TRANSFER_CATEGORY_NAME = "Wallet transfer";
+
+const resolveTransferAmounts = async ({
+  amount,
+  fromWallet,
+  toWallet,
+  amountIn,
+}) => {
+  const fromCurrency = fromWallet.currency;
+  const toCurrency = toWallet.currency;
+
+  if (fromCurrency === toCurrency) {
+    const parsedAmount = Number(amount);
+    return {
+      fromAmount: parsedAmount,
+      toAmount: parsedAmount,
+      fromCurrency,
+      toCurrency,
+      exchangeRate: 1,
+      rateUpdatedAt: null,
+    };
+  }
+
+  const conversion = await resolveConversionAmounts({
+    amount,
+    fromCurrency,
+    toCurrency,
+    amountIn: amountIn || "from",
+  });
+
+  return {
+    fromAmount: conversion.fromAmount,
+    toAmount: conversion.toAmount,
+    fromCurrency: conversion.fromCurrency,
+    toCurrency: conversion.toCurrency,
+    exchangeRate: conversion.exchangeRate,
+    rateUpdatedAt: conversion.rateUpdatedAt,
+  };
+};
 
 const getOrCreateTransferCategory = async (userId, session) => {
   let category = await TransactionCategory.findOne({
@@ -64,8 +103,8 @@ const listTransfers = async (req, res) => {
         .sort({ transferDate: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .populate("fromWalletId", "walletName")
-        .populate("toWalletId", "walletName")
+        .populate("fromWalletId", "walletName currency")
+        .populate("toWalletId", "walletName currency")
         .lean(),
       WalletTransfer.countDocuments(filter),
     ]);
@@ -89,8 +128,15 @@ const createTransfer = async (req, res) => {
 
   try {
     const userId = req.user.userId;
-    const { fromWalletId, toWalletId, amount, title, description, transferDate } =
-      req.body;
+    const {
+      fromWalletId,
+      toWalletId,
+      amount,
+      title,
+      description,
+      transferDate,
+      amountIn,
+    } = req.body;
 
     if (!fromWalletId || !toWalletId) {
       return errorResponse(res, "fromWalletId and toWalletId are required", 400);
@@ -133,8 +179,25 @@ const createTransfer = async (req, res) => {
 
     const amt = Number(amount);
 
+    let transferAmounts;
     try {
-      await assertSufficientWalletBalance(userId, fromWalletId, amt);
+      transferAmounts = await resolveTransferAmounts({
+        amount: amt,
+        fromWallet,
+        toWallet,
+        amountIn,
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
+
+    try {
+      await assertSufficientWalletBalance(
+        userId,
+        fromWalletId,
+        transferAmounts.fromAmount,
+      );
     } catch (error) {
       await session.abortTransaction();
       return errorResponse(res, error.message, error.statusCode || 400);
@@ -148,7 +211,7 @@ const createTransfer = async (req, res) => {
             walletId: fromWalletId,
             categoryId: category._id,
             type: "EXPENSE",
-            amount: amt,
+            amount: transferAmounts.fromAmount,
             title: title?.trim() || "Wallet transfer",
             description: description ?? null,
             transactionDate: when,
@@ -166,7 +229,7 @@ const createTransfer = async (req, res) => {
             walletId: toWalletId,
             categoryId: category._id,
             type: "INCOME",
-            amount: amt,
+            amount: transferAmounts.toAmount,
             title: title?.trim() || "Wallet transfer",
             description: description ?? null,
             transactionDate: when,
@@ -183,7 +246,13 @@ const createTransfer = async (req, res) => {
             userId,
             fromWalletId,
             toWalletId,
-            amount: amt,
+            amount: transferAmounts.fromAmount,
+            fromAmount: transferAmounts.fromAmount,
+            toAmount: transferAmounts.toAmount,
+            fromCurrency: transferAmounts.fromCurrency,
+            toCurrency: transferAmounts.toCurrency,
+            exchangeRate: transferAmounts.exchangeRate,
+            rateUpdatedAt: transferAmounts.rateUpdatedAt,
             title: title?.trim() || "Wallet transfer",
             description: description ?? null,
             transferDate: when,
@@ -222,8 +291,8 @@ const createTransfer = async (req, res) => {
     await session.commitTransaction();
 
     const populated = await WalletTransfer.findById(transferDoc._id)
-      .populate("fromWalletId", "walletName")
-      .populate("toWalletId", "walletName");
+      .populate("fromWalletId", "walletName currency")
+      .populate("toWalletId", "walletName currency");
 
     return successResponse(res, "Transfer completed successfully", populated, 201);
   } catch (error) {
@@ -262,10 +331,16 @@ const assertWalletBalancesAfterTransferUpdate = async (
     projectedBalances.set(key, (projectedBalances.get(key) ?? 0) + amount);
   };
 
-  addToWallet(existingTransfer.fromWalletId, Number(existingTransfer.amount));
-  addToWallet(existingTransfer.toWalletId, -Number(existingTransfer.amount));
-  addToWallet(nextTransfer.fromWalletId, -Number(nextTransfer.amount));
-  addToWallet(nextTransfer.toWalletId, Number(nextTransfer.amount));
+  addToWallet(
+    existingTransfer.fromWalletId,
+    Number(existingTransfer.fromAmount ?? existingTransfer.amount),
+  );
+  addToWallet(
+    existingTransfer.toWalletId,
+    -Number(existingTransfer.toAmount ?? existingTransfer.amount),
+  );
+  addToWallet(nextTransfer.fromWalletId, -Number(nextTransfer.fromAmount));
+  addToWallet(nextTransfer.toWalletId, Number(nextTransfer.toAmount));
 
   const hasNegativeBalance = [...projectedBalances.values()].some(
     (balance) => balance < 0,
@@ -292,6 +367,7 @@ const updateTransfer = async (req, res) => {
       description,
       transferDate,
       removeReceipt,
+      amountIn,
     } = req.body;
 
     if (!mongoose.isValidObjectId(id)) {
@@ -356,7 +432,7 @@ const updateTransfer = async (req, res) => {
 
     const nextFromWalletId = fromWalletId ?? transfer.fromWalletId;
     const nextToWalletId = toWalletId ?? transfer.toWalletId;
-    const nextAmount = parsedAmount ?? transfer.amount;
+    const nextInputAmount = parsedAmount ?? transfer.fromAmount ?? transfer.amount;
 
     if (nextFromWalletId.toString() === nextToWalletId.toString()) {
       await session.abortTransaction();
@@ -389,11 +465,25 @@ const updateTransfer = async (req, res) => {
       return errorResponse(res, "Linked transfer transactions not found", 404);
     }
 
+    let nextTransferAmounts;
+    try {
+      nextTransferAmounts = await resolveTransferAmounts({
+        amount: nextInputAmount,
+        fromWallet,
+        toWallet,
+        amountIn,
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
+
     try {
       await assertWalletBalancesAfterTransferUpdate(userId, transfer, {
         fromWalletId: nextFromWalletId,
         toWalletId: nextToWalletId,
-        amount: nextAmount,
+        fromAmount: nextTransferAmounts.fromAmount,
+        toAmount: nextTransferAmounts.toAmount,
       });
     } catch (error) {
       await session.abortTransaction();
@@ -409,7 +499,13 @@ const updateTransfer = async (req, res) => {
 
     transfer.fromWalletId = nextFromWalletId;
     transfer.toWalletId = nextToWalletId;
-    transfer.amount = nextAmount;
+    transfer.amount = nextTransferAmounts.fromAmount;
+    transfer.fromAmount = nextTransferAmounts.fromAmount;
+    transfer.toAmount = nextTransferAmounts.toAmount;
+    transfer.fromCurrency = nextTransferAmounts.fromCurrency;
+    transfer.toCurrency = nextTransferAmounts.toCurrency;
+    transfer.exchangeRate = nextTransferAmounts.exchangeRate;
+    transfer.rateUpdatedAt = nextTransferAmounts.rateUpdatedAt;
     transfer.title = nextTitle;
     transfer.description = nextDescription;
     transfer.transferDate = nextDate;
@@ -418,7 +514,7 @@ const updateTransfer = async (req, res) => {
     debitTx.walletId = nextFromWalletId;
     debitTx.categoryId = category._id;
     debitTx.type = "EXPENSE";
-    debitTx.amount = nextAmount;
+    debitTx.amount = nextTransferAmounts.fromAmount;
     debitTx.title = nextTitle;
     debitTx.description = nextDescription;
     debitTx.transactionDate = nextDate;
@@ -432,7 +528,7 @@ const updateTransfer = async (req, res) => {
     creditTx.walletId = nextToWalletId;
     creditTx.categoryId = category._id;
     creditTx.type = "INCOME";
-    creditTx.amount = nextAmount;
+    creditTx.amount = nextTransferAmounts.toAmount;
     creditTx.title = nextTitle;
     creditTx.description = nextDescription;
     creditTx.transactionDate = nextDate;
@@ -477,8 +573,8 @@ const updateTransfer = async (req, res) => {
     await session.commitTransaction();
 
     const populated = await WalletTransfer.findById(transfer._id)
-      .populate("fromWalletId", "walletName")
-      .populate("toWalletId", "walletName");
+      .populate("fromWalletId", "walletName currency")
+      .populate("toWalletId", "walletName currency");
 
     return successResponse(res, "Transfer updated successfully", populated);
   } catch (error) {

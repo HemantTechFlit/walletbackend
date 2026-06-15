@@ -1,4 +1,6 @@
 const mongoose = require("mongoose");
+const { ensureCurrenciesSeeded } = require("../config/currencySeed");
+const { refreshExchangeRates } = require("../services/exchangeRateService");
 
 const MONGODB_URI = `mongodb+srv://${process.env.MONGODB_USER}:${process.env.MONGODB_PASSWORD}@cluster0.9mzdwiq.mongodb.net/${process.env.DB_NAME}?appName=Cluster0`;
 
@@ -22,6 +24,13 @@ const connectDB = async () => {
     }
 
     console.log("✅ MongoDB Connected");
+
+    await ensureCurrenciesSeeded();
+    try {
+      await refreshExchangeRates({ force: false });
+    } catch (error) {
+      console.error("Initial exchange rate refresh failed:", error.message);
+    }
   } catch (error) {
     console.log(error);
     process.exit(1);

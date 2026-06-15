@@ -7,6 +7,7 @@ const TransactionCategory = require("../models/TransactionCategory");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { aggregateBalancesByWalletIds } = require("../utils/walletBalance");
 const { assertCanCreateWallet } = require("../utils/planLimits");
+const { assertActiveCurrency } = require("../services/exchangeRateService");
 
 const PAYMENT_ADJUSTMENT_CATEGORY_NAME = "Payment adjustment";
 
@@ -140,9 +141,11 @@ const createWallet = async (req, res) => {
 
     let currencyCode;
     if (currency !== undefined && String(currency).trim() !== "") {
-      currencyCode = String(currency).trim().toUpperCase();
-      if (currencyCode.length !== 3) {
-        return errorResponse(res, "currency must be a 3-letter code", 400);
+      try {
+        const activeCurrency = await assertActiveCurrency(currency);
+        currencyCode = activeCurrency.code;
+      } catch (error) {
+        return errorResponse(res, error.message, error.statusCode || 400);
       }
     }
 
@@ -258,12 +261,13 @@ const updateWallet = async (req, res) => {
     }
 
     if (currency !== undefined && String(currency).trim() !== "") {
-      const currencyCode = String(currency).trim().toUpperCase();
-      if (currencyCode.length !== 3) {
+      try {
+        const activeCurrency = await assertActiveCurrency(currency);
+        wallet.currency = activeCurrency.code;
+      } catch (error) {
         await session.abortTransaction();
-        return errorResponse(res, "currency must be a 3-letter code", 400);
+        return errorResponse(res, error.message, error.statusCode || 400);
       }
-      wallet.currency = currencyCode;
     }
 
     wallet.updatedAt = new Date();

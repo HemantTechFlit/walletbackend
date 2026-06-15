@@ -225,7 +225,9 @@ const buildReportJson = (rows, { reportType, fromDate, toDate }) => {
       headers: [
         "transactionId",
         "walletId",
+        "walletName",
         "categoryId",
+        "categoryName",
         "type",
         "amount",
         "title",
@@ -239,7 +241,9 @@ const buildReportJson = (rows, { reportType, fromDate, toDate }) => {
         .map((row) => ({
           transactionId: String(row._id),
           walletId: row.walletId ? String(row.walletId) : null,
+          walletName: row.walletSnapshot?.walletName ?? null,
           categoryId: row.categoryId ? String(row.categoryId) : null,
+          categoryName: row.categorySnapshot?.name ?? null,
           type: row.type ?? null,
           amount: row.amount ?? null,
           title: row.title ?? null,
@@ -256,7 +260,9 @@ const buildReportJson = (rows, { reportType, fromDate, toDate }) => {
     headers: [
       "id",
       "walletId",
+      "walletName",
       "categoryId",
+      "categoryName",
       "type",
       "amount",
       "title",

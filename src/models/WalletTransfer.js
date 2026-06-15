@@ -26,6 +26,42 @@ const walletTransferSchema = new mongoose.Schema(
       min: 0,
     },
 
+    fromAmount: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+
+    toAmount: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+
+    fromCurrency: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      default: null,
+    },
+
+    toCurrency: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      default: null,
+    },
+
+    exchangeRate: {
+      type: Number,
+      default: null,
+    },
+
+    rateUpdatedAt: {
+      type: Date,
+      default: null,
+    },
+
     title: {
       type: String,
       trim: true,

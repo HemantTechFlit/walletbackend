@@ -14,6 +14,7 @@ const {
   aggregateBalancesByWalletIds,
   assertSufficientWalletBalance,
 } = require("../utils/walletBalance");
+const { resolveTransactionAmount } = require("../utils/currencyConversion");
 
 const parseDate = (value, endOfDay = false) => {
   if (!value) {
@@ -89,7 +90,7 @@ const listTransactions = async (req, res) => {
         .sort({ transactionDate: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .populate("walletId", "walletName")
+        .populate("walletId", "walletName currency")
         .populate("categoryId", "name isDefault")
         .lean(),
       WalletTransaction.countDocuments(filter),
@@ -121,7 +122,7 @@ const getTransaction = async (req, res) => {
       userId: req.user.userId,
       isDeleted: false,
     })
-      .populate("walletId", "walletName")
+      .populate("walletId", "walletName currency")
       .populate("categoryId", "name");
 
     if (!tx) {
@@ -145,6 +146,8 @@ const createTransaction = async (req, res) => {
       title,
       description,
       transactionDate,
+      amountCurrency,
+      amountIn,
     } = req.body;
 
     if (!walletId || !mongoose.isValidObjectId(walletId)) {
@@ -176,7 +179,19 @@ const createTransaction = async (req, res) => {
       return errorResponse(res, "Invalid transactionDate", 400);
     }
 
-    const amt = Number(amount);
+    let transactionAmounts;
+    try {
+      transactionAmounts = await resolveTransactionAmount({
+        amount,
+        wallet,
+        amountCurrency,
+        amountIn,
+      });
+    } catch (error) {
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
+
+    const amt = transactionAmounts.amount;
 
     if (type === "EXPENSE") {
       try {
@@ -200,13 +215,21 @@ const createTransaction = async (req, res) => {
       categoryId: category?._id ?? null,
       type,
       amount: amt,
+      inputAmount: transactionAmounts.inputAmount,
+      inputCurrency: transactionAmounts.inputCurrency,
+      walletCurrency: transactionAmounts.walletCurrency,
+      exchangeRate: transactionAmounts.exchangeRate,
+      rateUpdatedAt: transactionAmounts.rateUpdatedAt,
       title: typeof title === "string" && title.trim() ? title.trim() : null,
       description: description ?? null,
       transactionDate: txDate,
       categorySnapshot: category
         ? { name: category.name, color: category.color, icon: category.icon }
         : null,
-      walletSnapshot: { walletName: wallet.walletName },
+      walletSnapshot: {
+        walletName: wallet.walletName,
+        walletColor: wallet.color,
+      },
       createdBy: userId,
     });
 
@@ -223,7 +246,7 @@ const createTransaction = async (req, res) => {
     }
 
     const populated = await WalletTransaction.findById(doc._id)
-      .populate("walletId", "walletName")
+      .populate("walletId", "walletName currency")
       .populate("categoryId", "name");
 
     return successResponse(res, "Transaction created successfully", populated, 201);
@@ -294,6 +317,8 @@ const updateTransaction = async (req, res) => {
       description,
       transactionDate,
       removeReceipt,
+      amountCurrency,
+      amountIn,
     } = req.body;
 
     if (!mongoose.isValidObjectId(id)) {
@@ -353,7 +378,23 @@ const updateTransaction = async (req, res) => {
     const nextWalletId = walletId ?? transaction.walletId;
     const nextCategoryId = categoryId ?? transaction.categoryId;
     const nextType = type ?? transaction.type;
-    const nextAmount = parsedAmount ?? transaction.amount;
+    const nextAmountIn =
+      amountIn !== undefined
+        ? amountIn
+        : transaction.inputCurrency
+          ? "to"
+          : "from";
+    const nextAmountCurrency =
+      nextAmountIn === "from"
+        ? amountCurrency
+        : amountCurrency !== undefined
+          ? amountCurrency
+          : transaction.inputCurrency ?? undefined;
+    const nextInputAmount =
+      parsedAmount ??
+      (nextAmountIn === "to"
+        ? transaction.inputAmount ?? transaction.amount
+        : transaction.amount);
 
     const [wallet, category] = await Promise.all([
       assertOwnWallet(userId, nextWalletId),
@@ -367,6 +408,37 @@ const updateTransaction = async (req, res) => {
     if (nextCategoryId && !category) {
       return errorResponse(res, "Category not found", 404);
     }
+
+    let transactionAmounts;
+    const shouldRecalculateAmount =
+      parsedAmount !== undefined ||
+      walletId !== undefined ||
+      amountCurrency !== undefined ||
+      amountIn !== undefined;
+
+    if (shouldRecalculateAmount) {
+      try {
+        transactionAmounts = await resolveTransactionAmount({
+          amount: nextInputAmount,
+          wallet,
+          amountCurrency: nextAmountCurrency,
+          amountIn: nextAmountIn,
+        });
+      } catch (error) {
+        return errorResponse(res, error.message, error.statusCode || 400);
+      }
+    } else {
+      transactionAmounts = {
+        amount: transaction.amount,
+        inputAmount: transaction.inputAmount ?? null,
+        inputCurrency: transaction.inputCurrency ?? null,
+        walletCurrency: transaction.walletCurrency ?? wallet.currency,
+        exchangeRate: transaction.exchangeRate ?? null,
+        rateUpdatedAt: transaction.rateUpdatedAt ?? null,
+      };
+    }
+
+    const nextAmount = transactionAmounts.amount;
 
     try {
       await assertWalletBalancesAfterTransactionUpdate(userId, transaction, {
@@ -382,6 +454,11 @@ const updateTransaction = async (req, res) => {
     transaction.categoryId = nextCategoryId;
     transaction.type = nextType;
     transaction.amount = nextAmount;
+    transaction.inputAmount = transactionAmounts.inputAmount;
+    transaction.inputCurrency = transactionAmounts.inputCurrency;
+    transaction.walletCurrency = transactionAmounts.walletCurrency;
+    transaction.exchangeRate = transactionAmounts.exchangeRate;
+    transaction.rateUpdatedAt = transactionAmounts.rateUpdatedAt;
 
     if (title !== undefined) {
       transaction.title =
@@ -429,7 +506,7 @@ const updateTransaction = async (req, res) => {
     await transaction.save();
 
     const populated = await WalletTransaction.findById(transaction._id)
-      .populate("walletId", "walletName")
+      .populate("walletId", "walletName currency")
       .populate("categoryId", "name");
 
     return successResponse(res, "Transaction updated successfully", populated);

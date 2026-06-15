@@ -37,6 +37,36 @@ const walletTransactionSchema = new mongoose.Schema(
       min: 0,
     },
 
+    inputAmount: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+
+    inputCurrency: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      default: null,
+    },
+
+    walletCurrency: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      default: null,
+    },
+
+    exchangeRate: {
+      type: Number,
+      default: null,
+    },
+
+    rateUpdatedAt: {
+      type: Date,
+      default: null,
+    },
+
     title: {
       type: String,
       default: null,

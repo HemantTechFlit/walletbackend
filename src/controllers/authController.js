@@ -281,6 +281,15 @@ const formatCategoryOption = (category) => ({
   type: category.type || "EXPENSE",
 });
 
+const groupCategoriesByType = (categories) => {
+  const formatted = categories.map(formatCategoryOption);
+
+  return {
+    income: formatted.filter((category) => category.type === "INCOME"),
+    expense: formatted.filter((category) => category.type === "EXPENSE"),
+  };
+};
+
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
 
 const createAuthSession = async ({ user, req }) => {
@@ -891,7 +900,7 @@ const getOnboardingOptions = async (req, res) => {
 
     return successResponse(res, "Onboarding options fetched successfully", {
       wallets: wallets.map(formatWalletOption),
-      categories: categories.map(formatCategoryOption),
+      categories: groupCategoriesByType(categories),
     });
   } catch (error) {
     return errorResponse(res, error.message);

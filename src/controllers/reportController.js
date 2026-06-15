@@ -6,6 +6,7 @@ const mongoose = require("mongoose");
 const Report = require("../models/Report");
 const Wallet = require("../models/Wallet");
 const WalletTransaction = require("../models/WalletTransaction");
+const TransactionCategory = require("../models/TransactionCategory");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { assertCanCreateReport } = require("../utils/planLimits");
 const { buildReportJson } = require("../utils/reportExport");
@@ -41,6 +42,62 @@ const applyTransactionFilters = (txFilter, filters) => {
     }
     txFilter.categoryId = filters.categoryId;
   }
+};
+
+const enrichReportMeta = async (userId, { walletIds = [], filters = {} }) => {
+  const categoryId = filters?.categoryId;
+
+  const [wallets, category] = await Promise.all([
+    walletIds.length > 0
+      ? Wallet.find({
+          _id: { $in: walletIds },
+          userId,
+          isDeleted: false,
+        })
+          .select("walletName")
+          .lean()
+      : [],
+    categoryId && mongoose.isValidObjectId(categoryId)
+      ? TransactionCategory.findOne({
+          _id: categoryId,
+          userId,
+          isDeleted: false,
+        })
+          .select("name")
+          .lean()
+      : null,
+  ]);
+
+  const walletById = new Map(wallets.map((wallet) => [wallet._id.toString(), wallet]));
+
+  return {
+    wallets: walletIds.map((walletId) => ({
+      walletId: String(walletId),
+      walletName: walletById.get(String(walletId))?.walletName ?? null,
+    })),
+    category:
+      categoryId && mongoose.isValidObjectId(categoryId)
+        ? {
+            categoryId: String(categoryId),
+            categoryName: category?.name ?? null,
+          }
+        : null,
+  };
+};
+
+const formatReportResponse = async (userId, report) => {
+  const plain =
+    typeof report.toObject === "function" ? report.toObject() : { ...report };
+  const { wallets, category } = await enrichReportMeta(userId, {
+    walletIds: plain.walletIds,
+    filters: plain.filters,
+  });
+
+  return {
+    ...plain,
+    wallets,
+    category,
+  };
 };
 
 const createReport = async (req, res) => {
@@ -133,13 +190,15 @@ const createReport = async (req, res) => {
       reportData,
     });
 
+    const responseData = await formatReportResponse(userId, {
+      ...report.toObject(),
+      reportData,
+    });
+
     return successResponse(
       res,
       "Report generated successfully",
-      {
-        ...report.toObject(),
-        reportData,
-      },
+      responseData,
       201,
     );
   } catch (error) {
@@ -161,8 +220,12 @@ const listReports = async (req, res) => {
       Report.countDocuments(filter),
     ]);
 
+    const enrichedItems = await Promise.all(
+      items.map((item) => formatReportResponse(req.user.userId, item)),
+    );
+
     return successResponse(res, "Reports fetched successfully", {
-      items,
+      items: enrichedItems,
       pagination: {
         page,
         limit,
@@ -192,14 +255,17 @@ const downloadReport = async (req, res) => {
     }
 
     if (report.reportData) {
+      const responseData = await formatReportResponse(req.user.userId, report);
       return successResponse(res, "Report fetched successfully", {
-        id: report._id,
-        reportType: report.reportType,
-        fromDate: report.fromDate,
-        toDate: report.toDate,
-        filters: report.filters,
-        generatedAt: report.generatedAt,
-        reportData: report.reportData,
+        id: responseData._id,
+        reportType: responseData.reportType,
+        fromDate: responseData.fromDate,
+        toDate: responseData.toDate,
+        filters: responseData.filters,
+        wallets: responseData.wallets,
+        category: responseData.category,
+        generatedAt: responseData.generatedAt,
+        reportData: responseData.reportData,
       });
     }
 
