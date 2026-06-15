@@ -46,6 +46,13 @@ const transactionCategorySchema = new mongoose.Schema(
       default: 0,
     },
 
+    type: {
+      type: String,
+      enum: ["INCOME", "EXPENSE"],
+      default: "EXPENSE",
+      index: true,
+    },
+
     isDefault: {
       type: Boolean,
       default: false,

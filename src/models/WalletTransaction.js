@@ -39,7 +39,7 @@ const walletTransactionSchema = new mongoose.Schema(
 
     title: {
       type: String,
-      required: true,
+      default: null,
       trim: true,
       maxlength: 150,
     },

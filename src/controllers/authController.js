@@ -71,6 +71,7 @@ const DEFAULT_ONBOARDING_CATEGORIES = [
     icon: "CustomIcons.catFuel",
     color: "0xff4549ff",
     sortOrder: 1,
+    type: "EXPENSE",
     aliases: ["Fuel"],
   },
   {
@@ -80,6 +81,7 @@ const DEFAULT_ONBOARDING_CATEGORIES = [
     icon: "CustomIcons.catService",
     color: "0xfff77b00",
     sortOrder: 2,
+    type: "EXPENSE",
     aliases: ["Service"],
   },
   {
@@ -89,6 +91,7 @@ const DEFAULT_ONBOARDING_CATEGORIES = [
     icon: "CustomIcons.catMaintenance",
     color: "0xfff72e08",
     sortOrder: 3,
+    type: "EXPENSE",
     aliases: ["Maintenance"],
   },
   {
@@ -98,6 +101,7 @@ const DEFAULT_ONBOARDING_CATEGORIES = [
     icon: "CustomIcons.catRepair",
     color: "0xff48FFC3",
     sortOrder: 4,
+    type: "EXPENSE",
     aliases: ["Repair"],
   },
   {
@@ -107,6 +111,7 @@ const DEFAULT_ONBOARDING_CATEGORIES = [
     icon: "CustomIcons.catPayout",
     color: "0xff5cb109",
     sortOrder: 5,
+    type: "EXPENSE",
     aliases: ["Salary (Cash out)", "Salary"],
   },
   {
@@ -116,6 +121,7 @@ const DEFAULT_ONBOARDING_CATEGORIES = [
     icon: "CustomIcons.catLoan",
     color: "0xffFFA800",
     sortOrder: 6,
+    type: "EXPENSE",
     aliases: ["Loan"],
   },
   {
@@ -125,6 +131,7 @@ const DEFAULT_ONBOARDING_CATEGORIES = [
     icon: "CustomIcons.catBorrow",
     color: "0xff0095FF",
     sortOrder: 7,
+    type: "INCOME",
     aliases: ["Borrowed"],
   },
 ];
@@ -271,6 +278,7 @@ const formatCategoryOption = (category) => ({
   description: category.description || "",
   icon: category.icon || category.slug,
   color: category.color,
+  type: category.type || "EXPENSE",
 });
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
@@ -774,6 +782,8 @@ const completeOnboarding = async (req, res) => {
           color: category.color,
 
           sortOrder: category.sortOrder,
+
+          type: category.type || "EXPENSE",
         })),
         {
           session,
@@ -869,7 +879,7 @@ const getOnboardingOptions = async (req, res) => {
       isDefault: true,
       isDeleted: false,
     })
-      .select("name slug description icon color sortOrder")
+      .select("name slug description icon color sortOrder type")
       .sort({ sortOrder: 1, createdAt: 1 })
       .lean();
 

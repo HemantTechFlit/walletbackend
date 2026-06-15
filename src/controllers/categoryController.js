@@ -7,12 +7,25 @@ const { successResponse, errorResponse } = require("../utils/responseHandler");
 const listCategories = async (req, res) => {
   try {
     const userId = req.user.userId;
+    const { type } = req.query;
 
-    const categories = await TransactionCategory.find({
+    if (type && !["INCOME", "EXPENSE"].includes(type)) {
+      return errorResponse(res, "type must be INCOME or EXPENSE", 400);
+    }
+
+    const filter = {
       userId,
       isDeleted: false,
-    })
-      .sort({ name: 1 })
+    };
+
+    if (type === "INCOME") {
+      filter.type = "INCOME";
+    } else if (type === "EXPENSE") {
+      filter.$or = [{ type: "EXPENSE" }, { type: { $exists: false } }];
+    }
+
+    const categories = await TransactionCategory.find(filter)
+      .sort({ sortOrder: 1, name: 1 })
       .lean();
 
     return successResponse(res, "Categories fetched successfully", categories);
@@ -23,7 +36,7 @@ const listCategories = async (req, res) => {
 
 const createCategory = async (req, res) => {
   try {
-    const { name, color, icon } = req.body;
+    const { name, color, icon, type } = req.body;
     const userId = req.user.userId;
 
     if (!name || typeof name !== "string" || !name.trim()) {
@@ -42,10 +55,15 @@ const createCategory = async (req, res) => {
       return errorResponse(res, "Category with this name already exists", 400);
     }
 
+    if (type !== undefined && !["INCOME", "EXPENSE"].includes(type)) {
+      return errorResponse(res, "type must be INCOME or EXPENSE", 400);
+    }
+
     const payload = {
       userId,
       name: trimmed,
       isDefault: false,
+      type: type || "EXPENSE",
     };
 
     if (color !== undefined) {

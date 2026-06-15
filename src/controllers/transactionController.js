@@ -159,10 +159,6 @@ const createTransaction = async (req, res) => {
     if (amount === undefined || Number(amount) <= 0 || Number.isNaN(Number(amount))) {
       return errorResponse(res, "amount must be a positive number", 400);
     }
-    if (!title || typeof title !== "string" || !title.trim()) {
-      return errorResponse(res, "title is required", 400);
-    }
-
     const wallet = await assertOwnWallet(userId, walletId);
     if (!wallet) {
       return errorResponse(res, "Wallet not found", 404);
@@ -204,7 +200,7 @@ const createTransaction = async (req, res) => {
       categoryId: category?._id ?? null,
       type,
       amount: amt,
-      title: title.trim(),
+      title: typeof title === "string" && title.trim() ? title.trim() : null,
       description: description ?? null,
       transactionDate: txDate,
       categorySnapshot: category
@@ -346,10 +342,6 @@ const updateTransaction = async (req, res) => {
       }
     }
 
-    if (title !== undefined && (typeof title !== "string" || !title.trim())) {
-      return errorResponse(res, "title must be a non-empty string", 400);
-    }
-
     let parsedTransactionDate;
     if (transactionDate !== undefined) {
       parsedTransactionDate = new Date(transactionDate);
@@ -392,7 +384,8 @@ const updateTransaction = async (req, res) => {
     transaction.amount = nextAmount;
 
     if (title !== undefined) {
-      transaction.title = title.trim();
+      transaction.title =
+        typeof title === "string" && title.trim() ? title.trim() : null;
     }
 
     if (description !== undefined) {
