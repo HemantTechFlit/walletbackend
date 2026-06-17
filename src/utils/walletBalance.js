@@ -38,8 +38,30 @@ const aggregateBalancesByWalletIds = async (userId, walletIds) => {
     ]),
   ]);
 
+  const txMap = new Map();
+  for (const row of rows) {
+    if (!row._id) {
+      continue;
+    }
+    const walletId = row._id.toString();
+    txMap.set(walletId, {
+      income: row.income,
+      expense: row.expense,
+      balance: row.income - row.expense,
+    });
+  }
+
   const map = new Map();
   for (const wallet of wallets) {
+    const walletId = wallet._id.toString();
+    const fromTransactions = txMap.get(walletId);
+
+    if (fromTransactions) {
+      map.set(walletId, fromTransactions);
+      continue;
+    }
+
+    // Legacy wallets created before transaction-based balances.
     const income = Number(wallet.incomeTotal) || 0;
     const expense = Number(wallet.expenseTotal) || 0;
     const storedBalance = Number(wallet.balance);
@@ -47,26 +69,7 @@ const aggregateBalancesByWalletIds = async (userId, walletIds) => {
       ? income - expense
       : storedBalance;
 
-    map.set(wallet._id.toString(), {
-      income,
-      expense,
-      balance,
-    });
-  }
-
-  for (const row of rows) {
-    const walletId = row._id.toString();
-    const current = map.get(walletId) ?? {
-      income: 0,
-      expense: 0,
-      balance: 0,
-    };
-
-    map.set(walletId, {
-      income: current.income + row.income,
-      expense: current.expense + row.expense,
-      balance: current.balance + row.income - row.expense,
-    });
+    map.set(walletId, { income, expense, balance });
   }
 
   return map;
@@ -80,18 +83,8 @@ const getWalletBalance = async (userId, walletId) => {
 const INSUFFICIENT_BALANCE_MESSAGE =
   "Your wallet balance is less than the payment amount.";
 
-const assertSufficientWalletBalance = async (userId, walletId, amount) => {
-  const paymentAmount = Number(amount);
-  if (paymentAmount <= 0 || Number.isNaN(paymentAmount)) {
-    return;
-  }
-
-  const { balance } = await getWalletBalance(userId, walletId);
-  if (balance < paymentAmount) {
-    const err = new Error(INSUFFICIENT_BALANCE_MESSAGE);
-    err.statusCode = 400;
-    throw err;
-  }
+const assertSufficientWalletBalance = async () => {
+  // Wallets may go negative; no minimum balance enforcement.
 };
 
 module.exports = {

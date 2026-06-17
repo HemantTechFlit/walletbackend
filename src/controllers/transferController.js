@@ -3,8 +3,6 @@ const mongoose = require("mongoose");
 const WalletTransfer = require("../models/WalletTransfer");
 const WalletTransaction = require("../models/WalletTransaction");
 const Wallet = require("../models/Wallet");
-const User = require("../models/User");
-const TransactionCategory = require("../models/TransactionCategory");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const {
   assertCanUploadReceipt,
@@ -14,11 +12,8 @@ const {
 } = require("../utils/receiptUpload");
 const {
   aggregateBalancesByWalletIds,
-  assertSufficientWalletBalance,
 } = require("../utils/walletBalance");
 const { resolveConversionAmounts } = require("../utils/currencyConversion");
-
-const TRANSFER_CATEGORY_NAME = "Wallet transfer";
 
 const resolveTransferAmounts = async ({
   amount,
@@ -58,37 +53,28 @@ const resolveTransferAmounts = async ({
   };
 };
 
-const getOrCreateTransferCategory = async (userId, session) => {
-  let category = await TransactionCategory.findOne({
-    userId,
-    name: TRANSFER_CATEGORY_NAME,
-    isDeleted: false,
-  }).session(session);
-
-  if (!category) {
-    const created = await TransactionCategory.create(
-      [
-        {
-          userId,
-          name: TRANSFER_CATEGORY_NAME,
-          isDefault: false,
-        },
-      ],
-      { session },
-    );
-    category = created[0];
-    await User.findByIdAndUpdate(
-      userId,
-      { $addToSet: { selectedCategories: category._id } },
-      { session },
-    );
-  }
-
-  return category;
-};
-
 const assertOwnWallet = (userId, walletId, session) =>
   Wallet.findOne({ _id: walletId, userId, isDeleted: false }).session(session);
+
+const UNKNOWN_WALLET = {
+  _id: null,
+  walletName: "Unknown wallet",
+  currency: null,
+};
+
+const normalizeTransferWallets = (transfer) => {
+  const normalized = { ...transfer };
+
+  if (!normalized.fromWalletId) {
+    normalized.fromWalletId = UNKNOWN_WALLET;
+  }
+
+  if (!normalized.toWalletId) {
+    normalized.toWalletId = UNKNOWN_WALLET;
+  }
+
+  return normalized;
+};
 
 const listTransfers = async (req, res) => {
   try {
@@ -110,7 +96,7 @@ const listTransfers = async (req, res) => {
     ]);
 
     return successResponse(res, "Transfers fetched successfully", {
-      items,
+      items: items.map(normalizeTransferWallets),
       pagination: {
         page,
         limit,
@@ -169,8 +155,6 @@ const createTransfer = async (req, res) => {
       return errorResponse(res, "Wallet not found", 404);
     }
 
-    const category = await getOrCreateTransferCategory(userId, session);
-
     const when = transferDate ? new Date(transferDate) : new Date();
     if (Number.isNaN(when.getTime())) {
       await session.abortTransaction();
@@ -192,30 +176,19 @@ const createTransfer = async (req, res) => {
       return errorResponse(res, error.message, error.statusCode || 400);
     }
 
-    try {
-      await assertSufficientWalletBalance(
-        userId,
-        fromWalletId,
-        transferAmounts.fromAmount,
-      );
-    } catch (error) {
-      await session.abortTransaction();
-      return errorResponse(res, error.message, error.statusCode || 400);
-    }
-
     const [debitTx, creditTx, transfer] = await Promise.all([
       WalletTransaction.create(
         [
           {
             userId,
             walletId: fromWalletId,
-            categoryId: category._id,
+            categoryId: null,
             type: "EXPENSE",
             amount: transferAmounts.fromAmount,
             title: title?.trim() || "Wallet transfer",
             description: description ?? null,
             transactionDate: when,
-            categorySnapshot: { name: category.name },
+            categorySnapshot: null,
             walletSnapshot: { walletName: fromWallet.walletName },
             createdBy: userId,
           },
@@ -227,13 +200,13 @@ const createTransfer = async (req, res) => {
           {
             userId,
             walletId: toWalletId,
-            categoryId: category._id,
+            categoryId: null,
             type: "INCOME",
             amount: transferAmounts.toAmount,
             title: title?.trim() || "Wallet transfer",
             description: description ?? null,
             transactionDate: when,
-            categorySnapshot: { name: category.name },
+            categorySnapshot: null,
             walletSnapshot: { walletName: toWallet.walletName },
             createdBy: userId,
           },
@@ -342,15 +315,6 @@ const assertWalletBalancesAfterTransferUpdate = async (
   addToWallet(nextTransfer.fromWalletId, -Number(nextTransfer.fromAmount));
   addToWallet(nextTransfer.toWalletId, Number(nextTransfer.toAmount));
 
-  const hasNegativeBalance = [...projectedBalances.values()].some(
-    (balance) => balance < 0,
-  );
-
-  if (hasNegativeBalance) {
-    const err = new Error("Your wallet balance is less than the payment amount.");
-    err.statusCode = 400;
-    throw err;
-  }
 };
 
 const updateTransfer = async (req, res) => {
@@ -439,7 +403,7 @@ const updateTransfer = async (req, res) => {
       return errorResponse(res, "Cannot transfer to the same wallet", 400);
     }
 
-    const [fromWallet, toWallet, debitTx, creditTx, category] = await Promise.all([
+    const [fromWallet, toWallet, debitTx, creditTx] = await Promise.all([
       assertOwnWallet(userId, nextFromWalletId, session),
       assertOwnWallet(userId, nextToWalletId, session),
       WalletTransaction.findOne({
@@ -452,7 +416,6 @@ const updateTransfer = async (req, res) => {
         userId,
         isDeleted: false,
       }).session(session),
-      getOrCreateTransferCategory(userId, session),
     ]);
 
     if (!fromWallet || !toWallet) {
@@ -512,13 +475,13 @@ const updateTransfer = async (req, res) => {
     transfer.updatedAt = now;
 
     debitTx.walletId = nextFromWalletId;
-    debitTx.categoryId = category._id;
+    debitTx.categoryId = null;
     debitTx.type = "EXPENSE";
     debitTx.amount = nextTransferAmounts.fromAmount;
     debitTx.title = nextTitle;
     debitTx.description = nextDescription;
     debitTx.transactionDate = nextDate;
-    debitTx.categorySnapshot = { name: category.name };
+    debitTx.categorySnapshot = null;
     debitTx.walletSnapshot = {
       walletName: fromWallet.walletName,
       walletColor: fromWallet.color,
@@ -526,13 +489,13 @@ const updateTransfer = async (req, res) => {
     debitTx.updatedAt = now;
 
     creditTx.walletId = nextToWalletId;
-    creditTx.categoryId = category._id;
+    creditTx.categoryId = null;
     creditTx.type = "INCOME";
     creditTx.amount = nextTransferAmounts.toAmount;
     creditTx.title = nextTitle;
     creditTx.description = nextDescription;
     creditTx.transactionDate = nextDate;
-    creditTx.categorySnapshot = { name: category.name };
+    creditTx.categorySnapshot = null;
     creditTx.walletSnapshot = {
       walletName: toWallet.walletName,
       walletColor: toWallet.color,

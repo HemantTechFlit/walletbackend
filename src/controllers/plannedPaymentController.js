@@ -6,7 +6,6 @@ const Wallet = require("../models/Wallet");
 const User = require("../models/User");
 const TransactionCategory = require("../models/TransactionCategory");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
-const { assertSufficientWalletBalance } = require("../utils/walletBalance");
 
 const REPEAT_UNITS = ["DAYS", "WEEKS", "MONTHS", "YEARS"];
 const OCCURRENCE_TYPES = ["ALL", "UPCOMING", "OVERDUE"];
@@ -359,6 +358,28 @@ const createPlannedPayment = async (req, res) => {
   }
 };
 
+const listPlannedPayments = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const items = await PlannedPayment.find({
+      userId,
+      status: "ACTIVE",
+      isDeleted: false,
+    })
+      .sort({ createdAt: -1 })
+      .populate("walletId", "walletName")
+      .populate("categoryId", "name");
+
+    return successResponse(res, "Planned payments fetched successfully", {
+      items,
+      count: items.length,
+    });
+  } catch (error) {
+    return errorResponse(res, error.message);
+  }
+};
+
 const updatePlannedPayment = async (req, res) => {
   try {
     const { id } = req.params;
@@ -512,6 +533,11 @@ const listPlannedPaymentOccurrences = async (req, res) => {
   }
 };
 
+const listUpcomingPlannedPayments = async (req, res) => {
+  req.query.type = "UPCOMING";
+  return listPlannedPaymentOccurrences(req, res);
+};
+
 const listPlannedPaymentDecisions = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -654,19 +680,6 @@ const applyOccurrenceDecision = async ({
         return errorResponse(res, "Category not found", 404);
       }
 
-      if (plannedPayment.type === "EXPENSE") {
-        try {
-          await assertSufficientWalletBalance(
-            userId,
-            plannedPayment.walletId,
-            plannedPayment.amount,
-          );
-        } catch (error) {
-          await session.abortTransaction();
-          return errorResponse(res, error.message, error.statusCode || 400);
-        }
-      }
-
       const created = await WalletTransaction.create(
         [
           {
@@ -792,6 +805,8 @@ const deletePlannedPaymentOccurrence = async (req, res) => {
 };
 
 module.exports = {
+  listPlannedPayments,
+  listUpcomingPlannedPayments,
   createPlannedPayment,
   updatePlannedPayment,
   deletePlannedPayment,

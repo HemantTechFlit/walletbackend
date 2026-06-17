@@ -12,7 +12,6 @@ const {
 } = require("../utils/receiptUpload");
 const {
   aggregateBalancesByWalletIds,
-  assertSufficientWalletBalance,
 } = require("../utils/walletBalance");
 const { resolveTransactionAmount } = require("../utils/currencyConversion");
 
@@ -28,6 +27,33 @@ const parseDate = (value, endOfDay = false) => {
     d.setHours(23, 59, 59, 999);
   }
   return d;
+};
+
+const normalizeTransactionReferences = (transaction) => {
+  const normalized = { ...transaction };
+
+  if (!normalized.walletId) {
+    normalized.walletId = {
+      _id: null,
+      walletName: normalized.walletSnapshot?.walletName || "Unknown wallet",
+      currency: null,
+    };
+  }
+
+  const hasUnknownCategory =
+    normalized.categorySnapshot?.name === "Unknown category";
+
+  if (!normalized.categoryId && hasUnknownCategory) {
+    normalized.categoryId = {
+      _id: null,
+      name: "Unknown category",
+      color: normalized.categorySnapshot?.color ?? null,
+      icon: normalized.categorySnapshot?.icon ?? null,
+      isDefault: false,
+    };
+  }
+
+  return normalized;
 };
 
 const assertOwnWallet = (userId, walletId) =>
@@ -97,7 +123,7 @@ const listTransactions = async (req, res) => {
     ]);
 
     return successResponse(res, "Transactions fetched successfully", {
-      items,
+      items: items.map(normalizeTransactionReferences),
       pagination: {
         page,
         limit,
@@ -129,7 +155,11 @@ const getTransaction = async (req, res) => {
       return errorResponse(res, "Transaction not found", 404);
     }
 
-    return successResponse(res, "Transaction fetched successfully", tx);
+    return successResponse(
+      res,
+      "Transaction fetched successfully",
+      normalizeTransactionReferences(tx.toObject()),
+    );
   } catch (error) {
     return errorResponse(res, error.message);
   }
@@ -192,14 +222,6 @@ const createTransaction = async (req, res) => {
     }
 
     const amt = transactionAmounts.amount;
-
-    if (type === "EXPENSE") {
-      try {
-        await assertSufficientWalletBalance(userId, walletId, amt);
-      } catch (error) {
-        return errorResponse(res, error.message, error.statusCode || 400);
-      }
-    }
 
     if (req.file) {
       try {
@@ -293,15 +315,6 @@ const assertWalletBalancesAfterTransactionUpdate = async (
       getTransactionWalletEffect(nextTransaction),
   );
 
-  const hasNegativeBalance = [...projectedBalances.values()].some(
-    (balance) => balance < 0,
-  );
-
-  if (hasNegativeBalance) {
-    const err = new Error("Your wallet balance is less than the payment amount.");
-    err.statusCode = 400;
-    throw err;
-  }
 };
 
 const updateTransaction = async (req, res) => {

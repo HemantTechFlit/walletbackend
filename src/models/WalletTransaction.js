@@ -13,7 +13,8 @@ const walletTransactionSchema = new mongoose.Schema(
     walletId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Wallet",
-      required: true,
+      required: false,
+      default: null,
       index: true,
     },
 

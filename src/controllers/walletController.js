@@ -2,14 +2,13 @@ const mongoose = require("mongoose");
 
 const Wallet = require("../models/Wallet");
 const WalletTransaction = require("../models/WalletTransaction");
+const WalletTransfer = require("../models/WalletTransfer");
+const PlannedPayment = require("../models/PlannedPayment");
 const User = require("../models/User");
-const TransactionCategory = require("../models/TransactionCategory");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { aggregateBalancesByWalletIds } = require("../utils/walletBalance");
 const { assertCanCreateWallet } = require("../utils/planLimits");
 const { assertActiveCurrency } = require("../services/exchangeRateService");
-
-const PAYMENT_ADJUSTMENT_CATEGORY_NAME = "Payment adjustment";
 
 const assertOwnWallet = async (userId, walletId) => {
   const wallet = await Wallet.findOne({
@@ -20,63 +19,66 @@ const assertOwnWallet = async (userId, walletId) => {
   return wallet;
 };
 
-const parseOpeningAmount = (value, fieldName) => {
+const parseOpeningAmount = (value, fieldName, { allowNegative = false } = {}) => {
   if (value === undefined || value === null || value === "") {
     return { value: 0 };
   }
 
   const parsed = Number(value);
-  if (Number.isNaN(parsed) || parsed < 0) {
-    return { error: `${fieldName} must be a non-negative number` };
+  if (Number.isNaN(parsed) || (!allowNegative && parsed < 0)) {
+    return {
+      error: allowNegative
+        ? `${fieldName} must be a valid number`
+        : `${fieldName} must be a non-negative number`,
+    };
   }
 
   return { value: parsed };
 };
 
-const getOrCreatePaymentAdjustmentCategory = async (userId, session) => {
-  let category = await TransactionCategory.findOne({
-    userId,
-    name: PAYMENT_ADJUSTMENT_CATEGORY_NAME,
-    isDeleted: false,
-  }).session(session);
+const UNKNOWN_WALLET = {
+  walletName: "Unknown wallet",
+  walletColor: null,
+};
 
-  if (!category) {
-    const created = await TransactionCategory.create(
-      [
-        {
-          userId,
-          name: PAYMENT_ADJUSTMENT_CATEGORY_NAME,
-          isDefault: false,
-        },
-      ],
-      { session },
-    );
-    category = created[0];
+const sortWalletsByEffectiveOrder = (wallets, walletOrder = []) => {
+  const walletById = new Map(wallets.map((wallet) => [wallet._id.toString(), wallet]));
+  const customOrdered = [];
+  const seen = new Set();
 
-    await User.findByIdAndUpdate(
-      userId,
-      {
-        $addToSet: { selectedCategories: category._id },
-        $set: { updatedAt: new Date() },
-      },
-      { session },
-    );
+  for (const walletId of walletOrder) {
+    const key = walletId.toString();
+    const wallet = walletById.get(key);
+    if (!wallet || seen.has(key)) {
+      continue;
+    }
+    customOrdered.push(wallet);
+    seen.add(key);
   }
 
-  return category;
+  const remaining = wallets
+    .filter((wallet) => !seen.has(wallet._id.toString()))
+    .sort((a, b) => a.walletName.localeCompare(b.walletName, undefined, { sensitivity: "base" }));
+
+  return [...customOrdered, ...remaining];
 };
 
 const listWallets = async (req, res) => {
   try {
-    const wallets = await Wallet.find({
-      userId: req.user.userId,
-      isDeleted: false,
-    }).sort({ createdAt: -1 });
+    const [wallets, user] = await Promise.all([
+      Wallet.find({
+        userId: req.user.userId,
+        isDeleted: false,
+      }),
+      User.findById(req.user.userId).select("walletOrder").lean(),
+    ]);
 
-    const ids = wallets.map((w) => w._id);
+    const orderedWallets = sortWalletsByEffectiveOrder(wallets, user?.walletOrder ?? []);
+
+    const ids = orderedWallets.map((w) => w._id);
     const balanceMap = await aggregateBalancesByWalletIds(req.user.userId, ids);
 
-    const data = wallets.map((w) => {
+    const data = orderedWallets.map((w) => {
       const b = balanceMap.get(w._id.toString()) ?? {
         income: 0,
         expense: 0,
@@ -159,23 +161,27 @@ const createWallet = async (req, res) => {
       return errorResponse(res, parsedExpenseTotal.error, 400);
     }
 
-    const parsedBalance = parseOpeningAmount(balance, "balance");
+    const parsedBalance = parseOpeningAmount(balance, "balance", {
+      allowNegative: true,
+    });
     if (parsedBalance.error) {
       return errorResponse(res, parsedBalance.error, 400);
     }
 
     await assertCanCreateWallet(req.user.userId);
 
+    const openingAmount =
+      balance === undefined || balance === null || balance === ""
+        ? parsedIncomeTotal.value - parsedExpenseTotal.value
+        : parsedBalance.value;
+
     const payload = {
       userId: req.user.userId,
       isDefault: false,
       walletName: walletName.trim(),
-      incomeTotal: parsedIncomeTotal.value,
-      expenseTotal: parsedExpenseTotal.value,
-      balance:
-        balance === undefined || balance === null || balance === ""
-          ? parsedIncomeTotal.value - parsedExpenseTotal.value
-          : parsedBalance.value,
+      incomeTotal: 0,
+      expenseTotal: 0,
+      balance: 0,
     };
 
     if (color !== undefined) {
@@ -192,16 +198,45 @@ const createWallet = async (req, res) => {
 
     const wallet = await Wallet.create(payload);
 
+    if (openingAmount !== 0) {
+      await WalletTransaction.create({
+        userId: req.user.userId,
+        walletId: wallet._id,
+        categoryId: null,
+        type: openingAmount > 0 ? "INCOME" : "EXPENSE",
+        amount: Math.abs(openingAmount),
+        title: "Opening balance",
+        description: null,
+        transactionDate: new Date(),
+        categorySnapshot: null,
+        walletSnapshot: {
+          walletName: wallet.walletName,
+          walletColor: wallet.color,
+        },
+        createdBy: req.user.userId,
+      });
+    }
+
     await User.findByIdAndUpdate(req.user.userId, {
       $addToSet: { selectedWallets: wallet._id },
+      $push: { walletOrder: wallet._id },
       $set: { updatedAt: new Date() },
     });
 
+    const balanceMap = await aggregateBalancesByWalletIds(req.user.userId, [
+      wallet._id,
+    ]);
+    const b = balanceMap.get(wallet._id.toString()) ?? {
+      income: 0,
+      expense: 0,
+      balance: 0,
+    };
+
     return successResponse(res, "Wallet created successfully", {
       ...wallet.toObject(),
-      incomeTotal: wallet.incomeTotal,
-      expenseTotal: wallet.expenseTotal,
-      balance: wallet.balance,
+      incomeTotal: b.income,
+      expenseTotal: b.expense,
+      balance: b.balance,
     }, 201);
   } catch (error) {
     const code = error.statusCode || 500;
@@ -229,7 +264,7 @@ const updateWallet = async (req, res) => {
     const parsedBalance =
       balance === undefined
         ? null
-        : parseOpeningAmount(balance, "balance");
+        : parseOpeningAmount(balance, "balance", { allowNegative: true });
 
     if (parsedBalance?.error) {
       return errorResponse(res, parsedBalance.error, 400);
@@ -274,7 +309,6 @@ const updateWallet = async (req, res) => {
     await wallet.save({ session });
 
     if (Math.abs(adjustmentAmount) > 0) {
-      const category = await getOrCreatePaymentAdjustmentCategory(userId, session);
       const adjustmentType = adjustmentAmount > 0 ? "INCOME" : "EXPENSE";
       const adjustmentValue = Math.abs(adjustmentAmount);
 
@@ -283,13 +317,13 @@ const updateWallet = async (req, res) => {
           {
             userId,
             walletId: id,
-            categoryId: category._id,
+            categoryId: null,
             type: adjustmentType,
             amount: adjustmentValue,
-            title: PAYMENT_ADJUSTMENT_CATEGORY_NAME,
+            title: "Payment adjustment",
             description: `Wallet balance adjusted from ${currentBalance} to ${parsedBalance.value}.`,
             transactionDate: new Date(),
-            categorySnapshot: { name: category.name },
+            categorySnapshot: null,
             walletSnapshot: {
               walletName: wallet.walletName,
               walletColor: wallet.color,
@@ -323,6 +357,8 @@ const updateWallet = async (req, res) => {
 };
 
 const deleteWallet = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const { id } = req.params;
 
@@ -330,41 +366,194 @@ const deleteWallet = async (req, res) => {
       return errorResponse(res, "Invalid wallet id", 400);
     }
 
+    session.startTransaction();
+
     const wallet = await Wallet.findOne({
       _id: id,
       userId: req.user.userId,
       isDeleted: false,
-    });
+    }).session(session);
 
     if (!wallet) {
+      await session.abortTransaction();
       return errorResponse(res, "Wallet not found", 404);
     }
 
-    wallet.isDeleted = true;
-    wallet.updatedAt = new Date();
-    await wallet.save();
-
-    const user = await User.findById(req.user.userId);
+    const user = await User.findById(req.user.userId).session(session);
     if (!user) {
+      await session.abortTransaction();
       return errorResponse(res, "User not found", 404);
     }
+
+    const transfers = await WalletTransfer.find({
+      userId: req.user.userId,
+      $or: [{ fromWalletId: id }, { toWalletId: id }],
+    }).session(session);
+
+    const counterpartTxIds = [];
+
+    for (const transfer of transfers) {
+      const isFromDeletedWallet = transfer.fromWalletId.toString() === id;
+      const isToDeletedWallet = transfer.toWalletId.toString() === id;
+
+      if (!isFromDeletedWallet && transfer.debitTransactionId) {
+        counterpartTxIds.push(transfer.debitTransactionId);
+      }
+      if (!isToDeletedWallet && transfer.creditTransactionId) {
+        counterpartTxIds.push(transfer.creditTransactionId);
+      }
+    }
+
+    if (counterpartTxIds.length) {
+      await WalletTransaction.updateMany(
+        {
+          _id: { $in: counterpartTxIds },
+          userId: req.user.userId,
+          isDeleted: false,
+        },
+        {
+          $set: {
+            walletId: null,
+            walletSnapshot: UNKNOWN_WALLET,
+            updatedAt: new Date(),
+          },
+        },
+        { session },
+      );
+    }
+
+    for (const transfer of transfers) {
+      const isFromDeletedWallet = transfer.fromWalletId.toString() === id;
+      const isToDeletedWallet = transfer.toWalletId.toString() === id;
+      const transferUpdates = { updatedAt: new Date() };
+
+      if (isFromDeletedWallet) {
+        transferUpdates.debitTransactionId = null;
+      }
+      if (isToDeletedWallet) {
+        transferUpdates.creditTransactionId = null;
+      }
+
+      if (isFromDeletedWallet || isToDeletedWallet) {
+        await WalletTransfer.updateOne(
+          { _id: transfer._id },
+          { $set: transferUpdates },
+          { session },
+        );
+      }
+    }
+
+    // Hard-delete all transactions in this wallet (including transfer legs on this side).
+    // Counterpart transfer transactions on other wallets are kept and marked unknown above.
+    await WalletTransaction.deleteMany(
+      {
+        userId: req.user.userId,
+        walletId: id,
+      },
+      { session },
+    );
+
+    await PlannedPayment.deleteMany(
+      { userId: req.user.userId, walletId: id },
+      { session },
+    );
+
+    await Wallet.deleteOne({ _id: id, userId: req.user.userId }, { session });
 
     user.selectedWallets = (user.selectedWallets || []).filter(
       (w) => w.toString() !== id,
     );
+    user.walletOrder = (user.walletOrder || []).filter((w) => w.toString() !== id);
 
     if (user.defaultWalletId?.toString() === id) {
       const nextWallet = await Wallet.findOne({
         userId: req.user.userId,
         isDeleted: false,
-      }).sort({ createdAt: 1 });
+      })
+        .sort({ createdAt: 1 })
+        .session(session);
       user.defaultWalletId = nextWallet?._id ?? null;
     }
 
     user.updatedAt = new Date();
-    await user.save();
+    await user.save({ session });
+
+    await session.commitTransaction();
 
     return successResponse(res, "Wallet deleted successfully");
+  } catch (error) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    return errorResponse(res, error.message);
+  } finally {
+    session.endSession();
+  }
+};
+
+const getWalletOrder = async (req, res) => {
+  try {
+    const [wallets, user] = await Promise.all([
+      Wallet.find({ userId: req.user.userId, isDeleted: false }).lean(),
+      User.findById(req.user.userId).select("walletOrder").lean(),
+    ]);
+
+    const orderedWallets = sortWalletsByEffectiveOrder(wallets, user?.walletOrder ?? []);
+    return successResponse(res, "Wallet order fetched successfully", {
+      walletIds: orderedWallets.map((wallet) => wallet._id),
+    });
+  } catch (error) {
+    return errorResponse(res, error.message);
+  }
+};
+
+const updateWalletOrder = async (req, res) => {
+  try {
+    const { walletIds } = req.body;
+
+    if (!Array.isArray(walletIds)) {
+      return errorResponse(res, "walletIds must be an array", 400);
+    }
+
+    const normalizedIds = walletIds.map((walletId) => walletId?.toString?.());
+    if (normalizedIds.some((walletId) => !mongoose.isValidObjectId(walletId))) {
+      return errorResponse(res, "walletIds must contain valid wallet ids", 400);
+    }
+
+    const uniqueIds = [...new Set(normalizedIds)];
+    if (uniqueIds.length !== normalizedIds.length) {
+      return errorResponse(res, "walletIds cannot contain duplicates", 400);
+    }
+
+    const activeWallets = await Wallet.find({
+      userId: req.user.userId,
+      isDeleted: false,
+    }).select("_id");
+    const activeIds = activeWallets.map((wallet) => wallet._id.toString());
+
+    if (uniqueIds.length !== activeIds.length) {
+      return errorResponse(
+        res,
+        "walletIds must include all active wallets exactly once",
+        400,
+      );
+    }
+
+    const activeSet = new Set(activeIds);
+    if (uniqueIds.some((walletId) => !activeSet.has(walletId))) {
+      return errorResponse(res, "walletIds contain invalid wallets", 400);
+    }
+
+    await User.findByIdAndUpdate(req.user.userId, {
+      $set: {
+        walletOrder: uniqueIds,
+        updatedAt: new Date(),
+      },
+    });
+
+    return successResponse(res, "Wallet order updated successfully", {
+      walletIds: uniqueIds,
+    });
   } catch (error) {
     return errorResponse(res, error.message);
   }
@@ -376,4 +565,6 @@ module.exports = {
   createWallet,
   updateWallet,
   deleteWallet,
+  getWalletOrder,
+  updateWalletOrder,
 };

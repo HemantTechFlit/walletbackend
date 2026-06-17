@@ -86,6 +86,12 @@ const userSchema = new mongoose.Schema(
       ref: "Wallet",
       default: null,
     },
+    walletOrder: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Wallet",
+      },
+    ],
 
     subscriptionId: {
       type: mongoose.Schema.Types.ObjectId,

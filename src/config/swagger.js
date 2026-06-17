@@ -11,30 +11,21 @@ const options = {
     },
     servers: [
       {
-        url: "https://expense-tracker-ip37.onrender.com",
-        description: "Expense Tracker API production server",
+        url: "http://localhost:3000",
+        description: "Local development server",
       },
     ],
     tags: [
       { name: "Auth", description: "Authentication APIs" },
       { name: "Onboarding", description: "Onboarding APIs" },
       { name: "Users", description: "Current user profile and preferences" },
-      {
-        name: "Wallets",
-        description: "User wallets (requires completed onboarding)",
-      },
+      { name: "Wallets", description: "User wallets (requires completed onboarding)" },
       { name: "Categories", description: "Transaction categories" },
       { name: "Transactions", description: "Income and expense entries" },
-      {
-        name: "Planned Payments",
-        description: "Manual planned income/expense reminders",
-      },
+      { name: "Planned Payments", description: "Manual planned income/expense reminders" },
       { name: "Transfers", description: "Wallet-to-wallet transfers" },
       { name: "Voice", description: "AI-assisted voice transaction drafts" },
-      {
-        name: "Reports",
-        description: "CSV/PDF/receipt reports returned as JSON",
-      },
+      { name: "Reports", description: "CSV/PDF/receipt reports returned as JSON" },
       {
         name: "Subscriptions",
         description: "User subscription and effective plan",
@@ -49,8 +40,7 @@ const options = {
       },
       {
         name: "Currencies",
-        description:
-          "Public currency list and live conversion preview (no auth)",
+        description: "Public currency list and live conversion preview (no auth)",
       },
     ],
     components: {
@@ -125,8 +115,7 @@ const options = {
             },
             currency: {
               type: "string",
-              description:
-                "Optional ISO 4217 currency code for first-time social users.",
+              description: "Optional ISO 4217 currency code for first-time social users.",
               example: "USD",
             },
           },
@@ -206,11 +195,7 @@ const options = {
             description: { type: "string", example: "" },
             icon: { type: "string", example: "CustomIcons.catFuel" },
             color: { type: "string", example: "0xff4549ff" },
-            type: {
-              type: "string",
-              enum: ["INCOME", "EXPENSE"],
-              example: "EXPENSE",
-            },
+            type: { type: "string", enum: ["INCOME", "EXPENSE"], example: "EXPENSE" },
           },
         },
         OnboardingCategoriesByType: {
@@ -241,8 +226,7 @@ const options = {
             },
             removeProfileImage: {
               type: "boolean",
-              description:
-                "Set true to clear profileImage (multipart form field)",
+              description: "Set true to clear profileImage (multipart form field)",
             },
           },
         },
@@ -257,8 +241,7 @@ const options = {
             profileImage: {
               type: "string",
               format: "binary",
-              description:
-                "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
+              description: "Profile picture file (JPEG, PNG, WebP, GIF, max 5MB)",
             },
             removeProfileImage: {
               type: "string",
@@ -320,6 +303,51 @@ const options = {
             },
           },
         },
+        WalletOrderData: {
+          type: "object",
+          properties: {
+            walletIds: {
+              type: "array",
+              items: { type: "string" },
+              example: [
+                "6820752aebf84d7a6394c164",
+                "6820752aebf84d7a6394c165",
+                "6820752aebf84d7a6394c166",
+              ],
+              description:
+                "Ordered list of wallet ids. Matches the order used by GET /api/wallets.",
+            },
+          },
+        },
+        UpdateWalletOrderRequest: {
+          type: "object",
+          required: ["walletIds"],
+          properties: {
+            walletIds: {
+              type: "array",
+              items: { type: "string" },
+              example: [
+                "6820752aebf84d7a6394c166",
+                "6820752aebf84d7a6394c164",
+                "6820752aebf84d7a6394c165",
+              ],
+              description:
+                "Full ordered list of all active wallet ids. Must include every wallet exactly once with no duplicates.",
+            },
+          },
+        },
+        CheckoutConfirmRequest: {
+          type: "object",
+          required: ["sessionId"],
+          properties: {
+            sessionId: {
+              type: "string",
+              description:
+                "Stripe Checkout session id returned after payment. Alternative to GET /api/subscriptions/checkout/success?session_id=...",
+              example: "cs_test_a1b2c3",
+            },
+          },
+        },
         CreateCategoryRequest: {
           type: "object",
           required: ["name"],
@@ -347,8 +375,7 @@ const options = {
               type: "number",
               nullable: true,
               example: 83.12,
-              description:
-                "Latest rate relative to baseCurrency (1 USD = rate INR)",
+              description: "Latest rate relative to baseCurrency (1 USD = rate INR)",
             },
           },
         },
@@ -387,8 +414,7 @@ const options = {
             categoryId: {
               type: "string",
               nullable: true,
-              description:
-                "Optional. If omitted, the transaction is created without a category.",
+              description: "Optional. If omitted, the transaction is created without a category.",
             },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: {
@@ -414,8 +440,7 @@ const options = {
               type: "string",
               nullable: true,
               example: "Salary",
-              description:
-                "Optional. If omitted or empty, the transaction is created without a title.",
+              description: "Optional. If omitted or empty, the transaction is created without a title.",
             },
             description: { type: "string", nullable: true },
             transactionDate: {
@@ -447,8 +472,7 @@ const options = {
             categoryId: {
               type: "string",
               nullable: true,
-              description:
-                "Optional. If omitted, the transaction is created without a category.",
+              description: "Optional. If omitted, the transaction is created without a category.",
             },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: {
@@ -474,8 +498,7 @@ const options = {
               type: "string",
               nullable: true,
               example: "Restaurant bill",
-              description:
-                "Optional. If omitted or empty, the transaction is created without a title.",
+              description: "Optional. If omitted or empty, the transaction is created without a title.",
             },
             description: { type: "string", nullable: true },
             transactionDate: {
@@ -520,8 +543,7 @@ const options = {
               type: "string",
               nullable: true,
               example: "Salary",
-              description:
-                "Optional. Pass null or an empty string to clear the title.",
+              description: "Optional. Pass null or an empty string to clear the title.",
             },
             description: { type: "string", nullable: true },
             transactionDate: {
@@ -563,8 +585,7 @@ const options = {
               type: "string",
               nullable: true,
               example: "Restaurant bill",
-              description:
-                "Optional. Pass null or an empty string to clear the title.",
+              description: "Optional. Pass null or an empty string to clear the title.",
             },
             description: { type: "string", nullable: true },
             transactionDate: {
@@ -830,7 +851,8 @@ const options = {
                 transactionType: {
                   type: "string",
                   enum: ["income", "expense", "INCOME", "EXPENSE"],
-                  description: "Filters transactions by type. Alias: type.",
+                  description:
+                    "Filters transactions by type. Alias: type.",
                 },
                 categoryId: { type: "string" },
               },
@@ -855,8 +877,7 @@ const options = {
             subject: { type: "string", example: "Unable to export report" },
             message: {
               type: "string",
-              example:
-                "I am getting an error when exporting my monthly report.",
+              example: "I am getting an error when exporting my monthly report.",
             },
             userId: {
               type: "string",
@@ -868,10 +889,7 @@ const options = {
           type: "object",
           required: ["subject", "msg"],
           properties: {
-            subject: {
-              type: "string",
-              example: "App crashes on wallet screen",
-            },
+            subject: { type: "string", example: "App crashes on wallet screen" },
             msg: {
               type: "string",
               example: "The app closes whenever I open wallet details.",
@@ -882,10 +900,7 @@ const options = {
           type: "object",
           required: ["subject", "msg"],
           properties: {
-            subject: {
-              type: "string",
-              example: "App crashes on wallet screen",
-            },
+            subject: { type: "string", example: "App crashes on wallet screen" },
             msg: {
               type: "string",
               example: "The app closes whenever I open wallet details.",
@@ -1008,9 +1023,7 @@ const options = {
           },
           responses: {
             200: { description: "Apple login successful with tokens" },
-            400: {
-              description: "Invalid token, missing email, or configuration",
-            },
+            400: { description: "Invalid token, missing email, or configuration" },
             403: { description: "User is not active" },
             500: { description: "Server error" },
           },
@@ -1244,9 +1257,7 @@ const options = {
             required: true,
             content: {
               "application/json": {
-                schema: {
-                  $ref: "#/components/schemas/SetDefaultWalletRequest",
-                },
+                schema: { $ref: "#/components/schemas/SetDefaultWalletRequest" },
               },
             },
           },
@@ -1263,9 +1274,11 @@ const options = {
         get: {
           tags: ["Wallets"],
           summary: "List wallets with balances",
+          description:
+            "Returns wallets in the user's saved wallet order. When no custom order is set, wallets are sorted A-Z by walletName. Any wallets missing from the saved order are appended at the end, also sorted A-Z by name.",
           security: [{ bearerAuth: [] }],
           responses: {
-            200: { description: "List of wallets" },
+            200: { description: "List of wallets in user-defined order" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             500: { description: "Server error" },
@@ -1287,6 +1300,80 @@ const options = {
             201: { description: "Wallet created" },
             401: { description: "Unauthorized" },
             403: { description: "Limit reached or onboarding incomplete" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/wallets/order": {
+        get: {
+          tags: ["Wallets"],
+          summary: "Get wallet order",
+          description:
+            "Returns the effective wallet order for the current user. If no custom order has been saved, wallets are returned in default A-Z order by walletName.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            200: {
+              description: "Wallet order fetched successfully",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: { $ref: "#/components/schemas/WalletOrderData" },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            500: { description: "Server error" },
+          },
+        },
+        patch: {
+          tags: ["Wallets"],
+          summary: "Update wallet order",
+          description:
+            "Saves a user-defined wallet order. walletIds must include every active wallet exactly once. After saving, GET /api/wallets returns wallets in this order.",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UpdateWalletOrderRequest" },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: "Wallet order updated successfully",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: { $ref: "#/components/schemas/WalletOrderData" },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            400: {
+              description:
+                "Invalid walletIds array, duplicates, missing wallets, or invalid wallet id",
+            },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
             500: { description: "Server error" },
           },
         },
@@ -1314,7 +1401,9 @@ const options = {
         },
         delete: {
           tags: ["Wallets"],
-          summary: "Soft-delete wallet",
+          summary: "Delete wallet",
+          description:
+            "Hard-deletes the wallet, its transactions, and planned payments. Transfer records are kept; counterpart transfer transactions remain with unknown wallet.",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -1438,7 +1527,9 @@ const options = {
         },
         delete: {
           tags: ["Categories"],
-          summary: "Soft-delete category",
+          summary: "Delete category",
+          description:
+            "Hard-deletes the category. Existing transactions keep their records but return unknown category in transaction APIs.",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -1592,10 +1683,7 @@ const options = {
           },
           responses: {
             200: { description: "Transaction updated" },
-            400: {
-              description:
-                "Validation failed, insufficient balance, or receipt exceeds 15 MB",
-            },
+            400: { description: "Validation failed, insufficient balance, or receipt exceeds 15 MB" },
             401: { description: "Unauthorized" },
             403: {
               description:
@@ -1627,6 +1715,19 @@ const options = {
         },
       },
       "/api/planned-payments": {
+        get: {
+          tags: ["Planned Payments"],
+          summary: "List active planned payments",
+          description:
+            "Returns all active planned payment rules for the current user, newest first.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            200: { description: "Planned payments list with count" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            500: { description: "Server error" },
+          },
+        },
         post: {
           tags: ["Planned Payments"],
           summary: "Create planned payment",
@@ -1647,6 +1748,30 @@ const options = {
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             404: { description: "Wallet or category not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/planned-payments/upcoming": {
+        get: {
+          tags: ["Planned Payments"],
+          summary: "List upcoming planned payment occurrences",
+          description:
+            "Shortcut for GET /api/planned-payments/occurrences with type=UPCOMING. Requires the same query parameters as the occurrences endpoint.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "days",
+              in: "query",
+              required: true,
+              schema: { type: "integer", minimum: 0 },
+            },
+          ],
+          responses: {
+            200: { description: "Upcoming planned payment occurrences" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
             500: { description: "Server error" },
           },
         },
@@ -1682,9 +1807,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            404: {
-              description: "Planned payment, wallet, or category not found",
-            },
+            404: { description: "Planned payment, wallet, or category not found" },
             500: { description: "Server error" },
           },
         },
@@ -1700,8 +1823,7 @@ const options = {
               in: "path",
               required: true,
               schema: { type: "string" },
-              description:
-                "Planned payment id (plannedPaymentId), not the composite occurrence id.",
+              description: "Planned payment id (plannedPaymentId), not the composite occurrence id.",
             },
           ],
           responses: {
@@ -1836,9 +1958,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            404: {
-              description: "Planned payment, wallet, or category not found",
-            },
+            404: { description: "Planned payment, wallet, or category not found" },
             500: { description: "Server error" },
           },
         },
@@ -1856,8 +1976,7 @@ const options = {
               in: "path",
               required: true,
               schema: { type: "string" },
-              description:
-                "Planned payment id (plannedPaymentId), not the composite occurrence id.",
+              description: "Planned payment id (plannedPaymentId), not the composite occurrence id.",
             },
           ],
           requestBody: {
@@ -1872,9 +1991,7 @@ const options = {
           },
           responses: {
             200: { description: "Planned payment occurrence deleted" },
-            400: {
-              description: "Validation failed or occurrence already decided",
-            },
+            400: { description: "Validation failed or occurrence already decided" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             404: { description: "Planned payment not found" },
@@ -1974,9 +2091,7 @@ const options = {
               description:
                 "Onboarding not completed, receipt upload not allowed on free plan, or Premium storage limit reached",
             },
-            404: {
-              description: "Transfer, wallet, or linked transaction not found",
-            },
+            404: { description: "Transfer, wallet, or linked transaction not found" },
             500: { description: "Server error" },
           },
         },
@@ -1984,8 +2099,7 @@ const options = {
       "/api/voice/transaction-draft": {
         post: {
           tags: ["Voice"],
-          summary:
-            "Generate an AI transaction or transfer draft from transcript text",
+          summary: "Generate an AI transaction or transfer draft from transcript text",
           description:
             "Returns a confirmation draft only. The frontend should let the user confirm or edit it, then call the existing transaction or transfer create API.",
           security: [{ bearerAuth: [] }],
@@ -2004,9 +2118,7 @@ const options = {
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
-            503: {
-              description: "Local or self-hosted voice model unavailable",
-            },
+            503: { description: "Local or self-hosted voice model unavailable" },
             500: { description: "Server error" },
           },
         },
@@ -2062,8 +2174,7 @@ const options = {
       "/api/reports/{id}/download": {
         get: {
           tags: ["Reports"],
-          summary:
-            "Get report data (JSON for new reports; legacy file redirect)",
+          summary: "Get report data (JSON for new reports; legacy file redirect)",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -2168,10 +2279,7 @@ const options = {
           },
           responses: {
             200: { description: "Stripe checkout session created" },
-            400: {
-              description:
-                "Validation failed or active paid subscription already exists",
-            },
+            400: { description: "Validation failed or active paid subscription already exists" },
             401: { description: "Unauthorized" },
             403: { description: "Too many wallets for target plan" },
             404: { description: "Plan not found" },
@@ -2199,9 +2307,31 @@ const options = {
             200: { description: "Subscription activated" },
             400: { description: "Missing or incomplete checkout session" },
             401: { description: "Unauthorized" },
-            403: {
-              description: "Checkout session does not belong to this user",
+            403: { description: "Checkout session does not belong to this user" },
+            500: { description: "Activation failed" },
+          },
+        },
+      },
+      "/api/subscriptions/checkout/confirm": {
+        post: {
+          tags: ["Subscriptions"],
+          summary: "Confirm checkout session (JSON body)",
+          description:
+            "Authenticated API alternative to GET /api/subscriptions/checkout/success. Pass the Stripe session id in the request body.",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CheckoutConfirmRequest" },
+              },
             },
+          },
+          responses: {
+            200: { description: "Subscription activated" },
+            400: { description: "Missing or incomplete checkout session" },
+            401: { description: "Unauthorized" },
+            403: { description: "Checkout session does not belong to this user" },
             500: { description: "Activation failed" },
           },
         },
@@ -2258,9 +2388,7 @@ const options = {
           security: [{ bearerAuth: [] }],
           responses: {
             200: { description: "Subscription reactivated" },
-            400: {
-              description: "Subscription is not scheduled for cancellation",
-            },
+            400: { description: "Subscription is not scheduled for cancellation" },
             401: { description: "Unauthorized" },
             404: { description: "Stripe subscription not found" },
             503: { description: "Stripe is not configured" },
@@ -2315,9 +2443,7 @@ const options = {
             required: true,
             content: {
               "multipart/form-data": {
-                schema: {
-                  $ref: "#/components/schemas/ReportBugMultipartRequest",
-                },
+                schema: { $ref: "#/components/schemas/ReportBugMultipartRequest" },
               },
               "application/json": {
                 schema: { $ref: "#/components/schemas/ReportBugRequest" },
@@ -2326,9 +2452,7 @@ const options = {
           },
           responses: {
             201: { description: "Bug report submitted" },
-            400: {
-              description: "Validation failed or attachment exceeds 3 MB",
-            },
+            400: { description: "Validation failed or attachment exceeds 3 MB" },
             401: { description: "Unauthorized" },
             404: { description: "User not found" },
             503: { description: "File storage is not configured" },
@@ -2358,9 +2482,7 @@ const options = {
           },
           responses: {
             201: { description: "Feature request submitted" },
-            400: {
-              description: "Validation failed or attachment exceeds 3 MB",
-            },
+            400: { description: "Validation failed or attachment exceeds 3 MB" },
             401: { description: "Unauthorized" },
             404: { description: "User not found" },
             503: { description: "File storage is not configured" },
@@ -2482,7 +2604,7 @@ const options = {
       },
     },
   },
-  apis: ["../routes/*.js"],
+  apis: [],
 };
 
 const swaggerSpec = swaggerJsdoc(options);
