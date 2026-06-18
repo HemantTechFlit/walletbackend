@@ -79,25 +79,12 @@ const options = {
         },
         SignupRequest: {
           type: "object",
-          required: [
-            "fullName",
-            "email",
-            "password",
-            "mobileNumber",
-            "currency",
-          ],
+          required: ["fullName", "email", "password", "mobileNumber"],
           properties: {
             fullName: { type: "string", example: "Hemant Kumar" },
             email: { type: "string", example: "hemant@gmail.com" },
             password: { type: "string", example: "Password@123" },
             mobileNumber: { type: "string", example: "9876543210" },
-            currency: {
-              type: "string",
-              description: "ISO 4217 currency code (3 letters)",
-              example: "USD",
-              minLength: 3,
-              maxLength: 3,
-            },
           },
         },
         LoginRequest: {
@@ -171,7 +158,11 @@ const options = {
         },
         CompleteOnboardingRequest: {
           type: "object",
-          required: ["selectedWallets", "selectedCategories"],
+          required: [
+            "selectedWallets",
+            "selectedCategories",
+            "defaultCurrency",
+          ],
           properties: {
             selectedWallets: {
               type: "array",
@@ -182,6 +173,14 @@ const options = {
               type: "array",
               description: "Mongo _id values or onboarding ids like fuel",
               items: { type: "string", example: "fuel" },
+            },
+            defaultCurrency: {
+              type: "string",
+              description:
+                "User's default currency. Applied to all wallets created during onboarding and used when creating wallets without an explicit currency.",
+              example: "INR",
+              minLength: 3,
+              maxLength: 3,
             },
           },
         },
@@ -233,7 +232,6 @@ const options = {
           properties: {
             fullName: { type: "string", example: "Jane Doe" },
             mobileNumber: { type: "string", example: "9876543210" },
-            currency: { type: "string", example: "AUD" },
             profileImage: {
               type: "string",
               nullable: true,
@@ -253,7 +251,6 @@ const options = {
           properties: {
             fullName: { type: "string", example: "Hemant Kumar" },
             mobileNumber: { type: "string", example: "9876543210" },
-            currency: { type: "string", example: "USD" },
             profileImage: {
               type: "string",
               format: "binary",
@@ -274,6 +271,19 @@ const options = {
             walletId: {
               type: "string",
               example: "6820752aebf84d7a6394c164",
+            },
+          },
+        },
+        SetDefaultCurrencyRequest: {
+          type: "object",
+          required: ["defaultCurrency"],
+          properties: {
+            defaultCurrency: {
+              type: "string",
+              description: "ISO 4217 currency code (3 letters)",
+              example: "INR",
+              minLength: 3,
+              maxLength: 3,
             },
           },
         },
@@ -380,6 +390,30 @@ const options = {
             },
           },
         },
+        CurrencyConversionPair: {
+          type: "object",
+          properties: {
+            from: { type: "string", example: "USD" },
+            to: { type: "string", example: "INR" },
+            rate: { type: "number", example: 96.67 },
+          },
+        },
+        CurrencyListResponse: {
+          type: "object",
+          properties: {
+            defaultCurrency: {
+              type: "string",
+              example: "USD",
+              description: "Base currency used for stored exchange rates",
+            },
+            conversions: {
+              type: "array",
+              description:
+                "Bidirectional conversion rates between the default currency and every other supported currency",
+              items: { $ref: "#/components/schemas/CurrencyConversionPair" },
+            },
+          },
+        },
         CurrencyItem: {
           type: "object",
           properties: {
@@ -422,6 +456,11 @@ const options = {
             name: { type: "string", example: "Groceries" },
             color: { type: "string", example: "0xff4549ff" },
             icon: { type: "string", example: "CustomIcons.catFood" },
+            type: {
+              type: "string",
+              enum: ["INCOME", "EXPENSE"],
+              example: "EXPENSE",
+            },
           },
         },
         CreateTransactionRequest: {
@@ -1275,6 +1314,31 @@ const options = {
           responses: {
             200: { description: "Account deleted" },
             401: { description: "Unauthorized" },
+            404: { description: "User not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/users/me/default-currency": {
+        post: {
+          tags: ["Users"],
+          summary: "Set default currency",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/SetDefaultCurrencyRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Default currency updated" },
+            400: { description: "Invalid currency" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
             404: { description: "User not found" },
             500: { description: "Server error" },
           },
@@ -2565,11 +2629,30 @@ const options = {
       "/api/currencies": {
         get: {
           tags: ["Currencies"],
-          summary: "List supported currencies with latest exchange rates",
+          summary: "List supported currencies with conversion rates",
           description:
-            "Public endpoint. Returns up to 50 supported currencies and their latest rates relative to the base currency. No authentication required.",
+            "Public endpoint. Returns the default base currency and bidirectional conversion rates between it and every other supported currency. No authentication required.",
           responses: {
-            200: { description: "Currency list with rates" },
+            200: {
+              description: "Default currency and conversion rates",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: {
+                            $ref: "#/components/schemas/CurrencyListResponse",
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
             500: { description: "Server error" },
           },
         },

@@ -17,6 +17,7 @@ const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { seedPlansIfEmpty, assignBasicPlanToUser } = require("../utils/planLimits");
 const sendEmail = require("../utils/sendEmail");
 const { verifyProviderIdToken } = require("../utils/socialAuth");
+const { assertActiveCurrency } = require("../services/exchangeRateService");
 const Wallet = require("../models/Wallet");
 const TransactionCategory = require("../models/TransactionCategory");
 
@@ -448,7 +449,7 @@ const signup = async (req, res) => {
   try {
     session.startTransaction();
 
-    const { fullName, email, password, mobileNumber, currency } = req.body;
+    const { fullName, email, password, mobileNumber } = req.body;
 
     /*
     |--------------------------------------------------------------------------
@@ -456,13 +457,8 @@ const signup = async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    if (!fullName || !email || !password || !mobileNumber || !currency) {
+    if (!fullName || !email || !password || !mobileNumber) {
       return errorResponse(res, "All fields are required", 400);
-    }
-
-    const currencyCode = String(currency).trim().toUpperCase();
-    if (currencyCode.length !== 3) {
-      return errorResponse(res, "currency must be a 3-letter code", 400);
     }
 
     /*
@@ -513,7 +509,6 @@ const signup = async (req, res) => {
           email,
           mobileNumber,
           passwordHash: hashedPassword,
-          currency: currencyCode,
           authProviders: [
             {
               provider: "PASSWORD",
@@ -679,7 +674,11 @@ const completeOnboarding = async (req, res) => {
     await seedOnboardingTemplatesIfMissing();
     session.startTransaction();
 
-    const { selectedWallets = [], selectedCategories = [] } = req.body;
+    const {
+      selectedWallets = [],
+      selectedCategories = [],
+      defaultCurrency,
+    } = req.body;
 
     const userId = req.user.userId;
 
@@ -688,6 +687,18 @@ const completeOnboarding = async (req, res) => {
     | Validate Arrays
     |--------------------------------------------------------------------------
     */
+
+    if (!defaultCurrency || !String(defaultCurrency).trim()) {
+      return errorResponse(res, "defaultCurrency is required", 400);
+    }
+
+    let defaultCurrencyCode;
+    try {
+      const activeCurrency = await assertActiveCurrency(defaultCurrency);
+      defaultCurrencyCode = activeCurrency.code;
+    } catch (error) {
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
 
     if (!Array.isArray(selectedWallets)) {
       return errorResponse(res, "selectedWallets must be array", 400);
@@ -745,7 +756,7 @@ const completeOnboarding = async (req, res) => {
 
           color: wallet.color,
 
-          currency: wallet.currency,
+          currency: defaultCurrencyCode,
 
           sortOrder: wallet.sortOrder,
         })),
@@ -805,6 +816,8 @@ const completeOnboarding = async (req, res) => {
 
         defaultWalletId:
           createdWallets.length > 0 ? createdWallets[0]._id : null,
+
+        currency: defaultCurrencyCode,
 
         onboardingCompleted: true,
       },

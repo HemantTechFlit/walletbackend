@@ -149,6 +149,16 @@ const createWallet = async (req, res) => {
       } catch (error) {
         return errorResponse(res, error.message, error.statusCode || 400);
       }
+    } else {
+      const user = await User.findById(req.user.userId).select("currency").lean();
+      if (user?.currency) {
+        try {
+          const activeCurrency = await assertActiveCurrency(user.currency);
+          currencyCode = activeCurrency.code;
+        } catch (error) {
+          return errorResponse(res, error.message, error.statusCode || 400);
+        }
+      }
     }
 
     const parsedIncomeTotal = parseOpeningAmount(incomeTotal, "incomeTotal");
@@ -192,9 +202,7 @@ const createWallet = async (req, res) => {
       payload.icon = String(icon).trim();
     }
 
-    if (currencyCode) {
-      payload.currency = currencyCode;
-    }
+    payload.currency = currencyCode || "USD";
 
     const wallet = await Wallet.create(payload);
 

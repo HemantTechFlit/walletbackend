@@ -28,6 +28,25 @@ const roundCurrencyAmount = (amount, decimalPlaces = 2) => {
   return Math.round(amount * factor) / factor;
 };
 
+const roundExchangeRate = (rate) => {
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return rate;
+  }
+
+  if (rate >= 1) {
+    return roundCurrencyAmount(rate, 2);
+  }
+
+  for (const decimalPlaces of [2, 4, 6, 8]) {
+    const rounded = roundCurrencyAmount(rate, decimalPlaces);
+    if (rounded > 0) {
+      return rounded;
+    }
+  }
+
+  return rate;
+};
+
 const convertAmount = ({
   amount,
   fromCurrency,
@@ -79,6 +98,52 @@ const getUnitExchangeRate = ({ fromCurrency, toCurrency, rates, baseCurrency }) 
     baseCurrency,
     decimalPlaces: 8,
   });
+};
+
+const buildDefaultCurrencyConversions = ({
+  defaultCurrency,
+  currencyCodes,
+  rates,
+  baseCurrency,
+}) => {
+  const defaultCode = normalizeCurrencyCode(defaultCurrency);
+  const conversions = [];
+
+  for (const code of currencyCodes) {
+    const targetCode = normalizeCurrencyCode(code);
+    if (targetCode === defaultCode) {
+      continue;
+    }
+
+    conversions.push(
+      {
+        from: defaultCode,
+        to: targetCode,
+        rate: roundExchangeRate(
+          getUnitExchangeRate({
+            fromCurrency: defaultCode,
+            toCurrency: targetCode,
+            rates,
+            baseCurrency,
+          }),
+        ),
+      },
+      {
+        from: targetCode,
+        to: defaultCode,
+        rate: roundExchangeRate(
+          getUnitExchangeRate({
+            fromCurrency: targetCode,
+            toCurrency: defaultCode,
+            rates,
+            baseCurrency,
+          }),
+        ),
+      },
+    );
+  }
+
+  return conversions;
 };
 
 const resolveConversionAmounts = async ({
@@ -254,7 +319,9 @@ module.exports = {
   normalizeCurrencyCode,
   convertAmount,
   getUnitExchangeRate,
+  buildDefaultCurrencyConversions,
   resolveConversionAmounts,
   resolveTransactionAmount,
   roundCurrencyAmount,
+  roundExchangeRate,
 };

@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { buildPlansCatalogForUser } = require("../utils/planLimits");
+const { buildReceiptStorageInfo } = require("../utils/receiptUpload");
 const {
   createCheckoutSession,
   fulfillCheckoutSession,
@@ -9,6 +10,7 @@ const {
   cancelSubscription,
   reactivateSubscription,
 } = require("../services/subscriptionService");
+const { getEffectivePlanForUser } = require("../utils/planLimits");
 
 const renderCheckoutSuccessPage = (planName) => `<!DOCTYPE html>
 <html lang="en">
@@ -58,6 +60,10 @@ const renderCheckoutCancelPage = () => `<!DOCTYPE html>
 const getMySubscription = async (req, res) => {
   try {
     const catalog = await buildPlansCatalogForUser(req.user.userId);
+    const receiptStorage = await buildReceiptStorageInfo(
+      req.user.userId,
+      catalog.plan,
+    );
 
     return successResponse(res, "Subscription fetched successfully", {
       plans: catalog.plans,
@@ -67,6 +73,7 @@ const getMySubscription = async (req, res) => {
       walletCount: catalog.walletCount,
       walletLimit: catalog.plan?.maxWallets ?? null,
       billingProvider: catalog.subscription?.paymentProvider || null,
+      receiptStorage,
     });
   } catch (error) {
     return errorResponse(res, error.message, error.statusCode || 500);
@@ -104,10 +111,13 @@ const changePlan = async (req, res) => {
       userId: req.user.userId,
       planId,
     });
+    const { plan } = await getEffectivePlanForUser(req.user.userId);
+    const receiptStorage = await buildReceiptStorageInfo(req.user.userId, plan);
 
     return successResponse(res, result.message, {
       subscription: result.subscription,
       effectiveImmediately: result.effectiveImmediately,
+      receiptStorage,
     });
   } catch (error) {
     return errorResponse(res, error.message, error.statusCode || 500);
@@ -117,8 +127,12 @@ const changePlan = async (req, res) => {
 const cancelMySubscription = async (req, res) => {
   try {
     const result = await cancelSubscription(req.user.userId);
+    const { plan } = await getEffectivePlanForUser(req.user.userId);
+    const receiptStorage = await buildReceiptStorageInfo(req.user.userId, plan);
+
     return successResponse(res, result.message, {
       subscription: result.subscription,
+      receiptStorage,
     });
   } catch (error) {
     return errorResponse(res, error.message, error.statusCode || 500);
@@ -128,8 +142,12 @@ const cancelMySubscription = async (req, res) => {
 const reactivateMySubscription = async (req, res) => {
   try {
     const result = await reactivateSubscription(req.user.userId);
+    const { plan } = await getEffectivePlanForUser(req.user.userId);
+    const receiptStorage = await buildReceiptStorageInfo(req.user.userId, plan);
+
     return successResponse(res, result.message, {
       subscription: result.subscription,
+      receiptStorage,
     });
   } catch (error) {
     return errorResponse(res, error.message, error.statusCode || 500);

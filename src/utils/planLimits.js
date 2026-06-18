@@ -222,22 +222,85 @@ const getBasicPlan = async (session = null) => {
   return plan;
 };
 
-const markReceiptRetentionOnBasic = async (userId, session = null) => {
+const markReceiptRetentionOnBasic = async (
+  userId,
+  { basicEffectiveAt = null, session = null } = {},
+) => {
+  const {
+    userHasStoredReceipts,
+    RECEIPT_RETENTION_DAYS,
+  } = require("./receiptUpload");
+
+  const hasReceipts = await userHasStoredReceipts(userId, session);
+  if (!hasReceipts) {
+    return false;
+  }
+
+  const effectiveDate = basicEffectiveAt
+    ? new Date(basicEffectiveAt)
+    : new Date();
+  const deletionDate = new Date(effectiveDate);
+  deletionDate.setDate(deletionDate.getDate() + RECEIPT_RETENTION_DAYS);
+
   const update = {
     $set: {
-      receiptRetentionStartedAt: new Date(),
+      receiptDeletionScheduledAt: deletionDate,
       updatedAt: new Date(),
     },
   };
+
+  if (effectiveDate.getTime() <= Date.now()) {
+    update.$set.receiptRetentionStartedAt = effectiveDate;
+  }
+
   const options = session ? { session } : {};
+  await User.findByIdAndUpdate(userId, update, options);
+  return true;
+};
+
+const markUserLandedOnBasicPlan = async (userId, session = null) => {
+  const {
+    userHasStoredReceipts,
+    RECEIPT_RETENTION_DAYS,
+  } = require("./receiptUpload");
+
+  const options = session ? { session } : {};
+  let query = User.findById(userId).select(
+    "receiptDeletionScheduledAt receiptRetentionStartedAt",
+  );
+  if (session) {
+    query = query.session(session);
+  }
+  const user = await query.lean();
+
+  const now = new Date();
+  const update = {
+    $set: {
+      receiptRetentionStartedAt: now,
+      updatedAt: now,
+    },
+  };
+
+  if (!user?.receiptDeletionScheduledAt) {
+    const hasReceipts = await userHasStoredReceipts(userId, session);
+    if (hasReceipts) {
+      const deletionDate = new Date(now);
+      deletionDate.setDate(deletionDate.getDate() + RECEIPT_RETENTION_DAYS);
+      update.$set.receiptDeletionScheduledAt = deletionDate;
+    }
+  }
 
   await User.findByIdAndUpdate(userId, update, options);
+  return Boolean(
+    update.$set.receiptDeletionScheduledAt || user?.receiptDeletionScheduledAt,
+  );
 };
 
 const clearReceiptRetention = async (userId, session = null) => {
   const update = {
     $set: {
       receiptRetentionStartedAt: null,
+      receiptDeletionScheduledAt: null,
       updatedAt: new Date(),
     },
   };
@@ -424,6 +487,7 @@ module.exports = {
   UNLIMITED_WALLETS,
   UNLIMITED_REPORTS,
   markReceiptRetentionOnBasic,
+  markUserLandedOnBasicPlan,
   clearReceiptRetention,
   assertCanCreateWallet,
   assertCanCreateReport,

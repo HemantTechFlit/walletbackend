@@ -16,7 +16,8 @@ const Report = require("../models/Report");
 const AuditLog = require("../models/AuditLog");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { getEffectivePlanForUser } = require("../utils/planLimits");
-const { buildReceiptRetentionWarnings } = require("../utils/receiptUpload");
+const { assertActiveCurrency } = require("../services/exchangeRateService");
+const { buildReceiptRetentionInfo, buildReceiptRetentionWarnings, buildReceiptStorageInfo } = require("../utils/receiptUpload");
 const { uploadProfileImage } = require("../utils/r2Storage");
 
 const syncUserSelectionsFromDb = async (userId) => {
@@ -66,16 +67,16 @@ const getMe = async (req, res) => {
     userPayload.selectedCategories = categories;
 
     const { plan } = await getEffectivePlanForUser(userId);
-    const subscription = userPayload.subscriptionId || null;
-    const warnings = await buildReceiptRetentionWarnings(
-      userPayload,
-      plan,
-      subscription,
-    );
+    const { showWarning, deletingDate } = buildReceiptRetentionInfo(userPayload);
+    const warnings = await buildReceiptRetentionWarnings(userPayload);
+    const receiptStorage = await buildReceiptStorageInfo(userId, plan);
 
     return successResponse(res, "User fetched successfully", {
       user: userPayload,
       plan,
+      showWarning,
+      deletingDate,
+      receiptStorage,
       warnings,
     });
   } catch (error) {
@@ -86,7 +87,7 @@ const getMe = async (req, res) => {
 const updateMe = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { fullName, mobileNumber, currency, profileImage, removeProfileImage } =
+    const { fullName, mobileNumber, profileImage, removeProfileImage } =
       req.body;
 
     const updates = { updatedAt: new Date() };
@@ -103,14 +104,6 @@ const updateMe = async (req, res) => {
         return errorResponse(res, "Invalid mobile number", 400);
       }
       updates.mobileNumber = mobileNumber ? String(mobileNumber).trim() : null;
-    }
-
-    if (currency !== undefined && currency !== "") {
-      const c = String(currency).trim().toUpperCase();
-      if (c.length !== 3) {
-        return errorResponse(res, "currency must be a 3-letter code", 400);
-      }
-      updates.currency = c;
     }
 
     if (req.file) {
@@ -147,6 +140,38 @@ const updateMe = async (req, res) => {
   } catch (error) {
     const code = error.statusCode || 500;
     return errorResponse(res, error.message, code);
+  }
+};
+
+const setDefaultCurrency = async (req, res) => {
+  try {
+    const { defaultCurrency } = req.body;
+
+    if (!defaultCurrency || !String(defaultCurrency).trim()) {
+      return errorResponse(res, "defaultCurrency is required", 400);
+    }
+
+    let currencyCode;
+    try {
+      const activeCurrency = await assertActiveCurrency(defaultCurrency);
+      currencyCode = activeCurrency.code;
+    } catch (error) {
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.userId,
+      { $set: { currency: currencyCode, updatedAt: new Date() } },
+      { new: true },
+    ).select("-passwordHash");
+
+    if (!user || user.isDeleted) {
+      return errorResponse(res, "User not found", 404);
+    }
+
+    return successResponse(res, "Default currency updated", user);
+  } catch (error) {
+    return errorResponse(res, error.message);
   }
 };
 
@@ -272,6 +297,7 @@ const deleteMe = async (req, res) => {
 module.exports = {
   getMe,
   updateMe,
+  setDefaultCurrency,
   setDefaultWallet,
   deleteMe,
 };

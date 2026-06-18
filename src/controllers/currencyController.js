@@ -1,7 +1,13 @@
 const Currency = require("../models/Currency");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
-const { getLatestExchangeRates } = require("../services/exchangeRateService");
-const { resolveConversionAmounts } = require("../utils/currencyConversion");
+const {
+  BASE_CURRENCY,
+  getLatestExchangeRates,
+} = require("../services/exchangeRateService");
+const {
+  buildDefaultCurrencyConversions,
+  resolveConversionAmounts,
+} = require("../utils/currencyConversion");
 
 const listCurrencies = async (req, res) => {
   try {
@@ -10,25 +16,19 @@ const listCurrencies = async (req, res) => {
       getLatestExchangeRates().catch(() => null),
     ]);
 
-    const rates = rateSnapshot?.rates || {};
-
-    const data = currencies.map((currency) => ({
-      code: currency.code,
-      name: currency.name,
-      symbol: currency.symbol,
-      decimalPlaces: currency.decimalPlaces,
-      sortOrder: currency.sortOrder,
-      rate:
-        currency.code === (rateSnapshot?.baseCurrency || "USD")
-          ? 1
-          : rates[currency.code] ?? null,
-    }));
+    const defaultCurrency = rateSnapshot?.baseCurrency || BASE_CURRENCY;
+    const conversions = rateSnapshot
+      ? buildDefaultCurrencyConversions({
+          defaultCurrency,
+          currencyCodes: currencies.map((currency) => currency.code),
+          rates: rateSnapshot.rates,
+          baseCurrency: rateSnapshot.baseCurrency,
+        })
+      : [];
 
     return successResponse(res, "Currencies fetched successfully", {
-      baseCurrency: rateSnapshot?.baseCurrency || "USD",
-      rateUpdatedAt: rateSnapshot?.fetchedAt || null,
-      rateDate: rateSnapshot?.rateDate || null,
-      currencies: data,
+      defaultCurrency,
+      conversions,
     });
   } catch (error) {
     return errorResponse(res, error.message, error.statusCode || 500);

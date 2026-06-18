@@ -11,8 +11,10 @@ const {
   assignBasicPlanToUser,
   isPlanUpgrade,
   markReceiptRetentionOnBasic,
+  markUserLandedOnBasicPlan,
   clearReceiptRetention,
 } = require("../utils/planLimits");
+const { recalculateUserReceiptStorage } = require("../utils/receiptUpload");
 
 const STRIPE_PROVIDER = "stripe";
 
@@ -160,9 +162,11 @@ const upsertSubscriptionRecord = async ({
   if (session) {
     await User.findByIdAndUpdate(userId, { $set: userUpdate }, { session });
     await clearReceiptRetention(userId, session);
+    await recalculateUserReceiptStorage(userId, session);
   } else {
     await User.findByIdAndUpdate(userId, { $set: userUpdate });
     await clearReceiptRetention(userId);
+    await recalculateUserReceiptStorage(userId);
   }
 
   return subscription;
@@ -201,6 +205,7 @@ const syncSubscriptionFromStripe = async (stripeSubscriptionId) => {
       previousPeriodEnd &&
       startDate &&
       startDate.getTime() >= previousPeriodEnd.getTime();
+    let planChanged = false;
 
     if (existing.pendingPlanId && !periodRolledOver) {
       // Keep the current plan until the billing period ends.
@@ -208,10 +213,14 @@ const syncSubscriptionFromStripe = async (stripeSubscriptionId) => {
       const pendingPlan = await Plan.findById(existing.pendingPlanId).lean();
       existing.planId = pendingPlan?._id || plan._id;
       existing.pendingPlanId = null;
+      planChanged = true;
       if (pendingPlan?.name === BASIC_PLAN_NAME) {
-        await markReceiptRetentionOnBasic(user._id);
+        await markUserLandedOnBasicPlan(user._id);
       }
     } else {
+      if (String(existing.planId) !== String(plan._id)) {
+        planChanged = true;
+      }
       existing.planId = plan._id;
       existing.pendingPlanId = null;
     }
@@ -236,6 +245,10 @@ const syncSubscriptionFromStripe = async (stripeSubscriptionId) => {
     const activePlan = await Plan.findById(existing.planId).lean();
     if (activePlan && activePlan.name !== BASIC_PLAN_NAME) {
       await clearReceiptRetention(user._id);
+    }
+
+    if (planChanged) {
+      await recalculateUserReceiptStorage(user._id);
     }
 
     return existing;
@@ -263,7 +276,8 @@ const handleStripeSubscriptionDeleted = async (stripeSubscription) => {
   );
 
   await assignBasicPlanToUser(user._id);
-  await markReceiptRetentionOnBasic(user._id);
+  await markUserLandedOnBasicPlan(user._id);
+  await recalculateUserReceiptStorage(user._id);
   return null;
 };
 
@@ -536,6 +550,7 @@ const changeSubscriptionPlan = async ({ userId, planId }) => {
     subscription.updatedAt = new Date();
     await subscription.save();
     await clearReceiptRetention(userId);
+    await recalculateUserReceiptStorage(userId);
   } else {
     subscription.pendingPlanId = newPlan._id;
     subscription.cancelAtPeriodEnd = false;
@@ -609,7 +624,7 @@ const cancelSubscription = async (userId) => {
 
   subscription.updatedAt = new Date();
   await subscription.save();
-  await markReceiptRetentionOnBasic(userId);
+  await markReceiptRetentionOnBasic(userId, { basicEffectiveAt: periodEnd });
 
   const populated = await Subscription.findById(subscription._id).populate(
     "planId",
@@ -653,6 +668,7 @@ const reactivateSubscription = async (userId) => {
   subscription.updatedAt = new Date();
   await subscription.save();
   await clearReceiptRetention(userId);
+  await recalculateUserReceiptStorage(userId);
 
   const populated = await Subscription.findById(subscription._id).populate(
     "planId",

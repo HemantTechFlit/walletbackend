@@ -91,7 +91,7 @@ const createCategory = async (req, res) => {
 const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, color, icon } = req.body;
+    const { name, color, icon, type } = req.body;
     const userId = req.user.userId;
 
     if (!mongoose.isValidObjectId(id)) {
@@ -100,6 +100,10 @@ const updateCategory = async (req, res) => {
 
     if (!name || typeof name !== "string" || !name.trim()) {
       return errorResponse(res, "name is required", 400);
+    }
+
+    if (type !== undefined && !["INCOME", "EXPENSE"].includes(type)) {
+      return errorResponse(res, "type must be INCOME or EXPENSE", 400);
     }
 
     const category = await TransactionCategory.findOne({
@@ -120,6 +124,10 @@ const updateCategory = async (req, res) => {
 
     if (icon !== undefined) {
       category.icon = String(icon).trim();
+    }
+
+    if (type !== undefined) {
+      category.type = type;
     }
 
     category.updatedAt = new Date();

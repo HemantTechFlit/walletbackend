@@ -110,6 +110,17 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    receiptDeletionScheduledAt: {
+      type: Date,
+      default: null,
+    },
+
+    receiptStorageUsedBytes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     lastLoginAt: {
       type: Date,
       default: null,
