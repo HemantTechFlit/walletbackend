@@ -1,13 +1,9 @@
 const Currency = require("../models/Currency");
+const User = require("../models/User");
+const Wallet = require("../models/Wallet");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
-const {
-  BASE_CURRENCY,
-  getLatestExchangeRates,
-} = require("../services/exchangeRateService");
-const {
-  buildDefaultCurrencyConversions,
-  resolveConversionAmounts,
-} = require("../utils/currencyConversion");
+const { getLatestExchangeRates } = require("../services/exchangeRateService");
+const { buildWalletConversionMatrix } = require("../utils/currencyConversion");
 
 const listCurrencies = async (req, res) => {
   try {
@@ -16,19 +12,25 @@ const listCurrencies = async (req, res) => {
       getLatestExchangeRates().catch(() => null),
     ]);
 
-    const defaultCurrency = rateSnapshot?.baseCurrency || BASE_CURRENCY;
-    const conversions = rateSnapshot
-      ? buildDefaultCurrencyConversions({
-          defaultCurrency,
-          currencyCodes: currencies.map((currency) => currency.code),
-          rates: rateSnapshot.rates,
-          baseCurrency: rateSnapshot.baseCurrency,
-        })
-      : [];
+    const rates = rateSnapshot?.rates || {};
+
+    const data = currencies.map((currency) => ({
+      code: currency.code,
+      name: currency.name,
+      symbol: currency.symbol,
+      decimalPlaces: currency.decimalPlaces,
+      sortOrder: currency.sortOrder,
+      rate:
+        currency.code === (rateSnapshot?.baseCurrency || "USD")
+          ? 1
+          : rates[currency.code] ?? null,
+    }));
 
     return successResponse(res, "Currencies fetched successfully", {
-      defaultCurrency,
-      conversions,
+      baseCurrency: rateSnapshot?.baseCurrency || "USD",
+      rateUpdatedAt: rateSnapshot?.fetchedAt || null,
+      rateDate: rateSnapshot?.rateDate || null,
+      currencies: data,
     });
   } catch (error) {
     return errorResponse(res, error.message, error.statusCode || 500);
@@ -37,24 +39,27 @@ const listCurrencies = async (req, res) => {
 
 const convertCurrency = async (req, res) => {
   try {
-    const { from, to, amount, amountIn } = req.query;
+    const userId = req.user.userId;
 
-    if (!from || !to) {
-      return errorResponse(res, "from and to currency codes are required", 400);
+    const [user, walletCurrencies] = await Promise.all([
+      User.findById(userId).select("currency").lean(),
+      Wallet.distinct("currency", { userId, isDeleted: false }),
+    ]);
+
+    if (!user) {
+      return errorResponse(res, "User not found", 404);
     }
 
-    if (amount === undefined || amount === "") {
-      return errorResponse(res, "amount is required", 400);
-    }
-
-    const conversion = await resolveConversionAmounts({
-      amount,
-      fromCurrency: from,
-      toCurrency: to,
-      amountIn,
+    const data = await buildWalletConversionMatrix({
+      defaultCurrency: user.currency,
+      walletCurrencies,
     });
 
-    return successResponse(res, "Currency conversion calculated successfully", conversion);
+    return successResponse(
+      res,
+      "Currency conversions fetched successfully",
+      data,
+    );
   } catch (error) {
     return errorResponse(res, error.message, error.statusCode || 500);
   }

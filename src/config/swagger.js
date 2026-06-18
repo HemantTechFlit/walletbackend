@@ -390,30 +390,6 @@ const options = {
             },
           },
         },
-        CurrencyConversionPair: {
-          type: "object",
-          properties: {
-            from: { type: "string", example: "USD" },
-            to: { type: "string", example: "INR" },
-            rate: { type: "number", example: 96.67 },
-          },
-        },
-        CurrencyListResponse: {
-          type: "object",
-          properties: {
-            defaultCurrency: {
-              type: "string",
-              example: "USD",
-              description: "Base currency used for stored exchange rates",
-            },
-            conversions: {
-              type: "array",
-              description:
-                "Bidirectional conversion rates between the default currency and every other supported currency",
-              items: { $ref: "#/components/schemas/CurrencyConversionPair" },
-            },
-          },
-        },
         CurrencyItem: {
           type: "object",
           properties: {
@@ -434,19 +410,26 @@ const options = {
         CurrencyConversionResponse: {
           type: "object",
           properties: {
-            fromCurrency: { type: "string", example: "INR" },
-            toCurrency: { type: "string", example: "USD" },
-            fromAmount: { type: "number", example: 100000 },
-            toAmount: { type: "number", example: 1202.15 },
-            amountIn: { type: "string", enum: ["from", "to"], example: "from" },
-            exchangeRate: { type: "number", example: 0.0120215 },
-            rateDescription: {
-              type: "string",
-              example: "1 INR = 0.0120215 USD",
+            userWalletCurrencies: {
+              type: "array",
+              items: { type: "string" },
+              example: ["INR", "USD", "GBP"],
+              description:
+                "User default currency first, followed by unique currencies from the user's wallets.",
             },
-            baseCurrency: { type: "string", example: "USD" },
-            rateDate: { type: "string", nullable: true },
-            rateUpdatedAt: { type: "string", format: "date-time" },
+            conversions: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  from: { type: "string", example: "USD" },
+                  to: { type: "string", example: "INR" },
+                  rate: { type: "number", example: 96.67 },
+                },
+              },
+              description:
+                "Exchange rates for every ordered currency pair (from !== to) in userWalletCurrencies.",
+            },
           },
         },
         UpdateCategoryRequest: {
@@ -2629,30 +2612,11 @@ const options = {
       "/api/currencies": {
         get: {
           tags: ["Currencies"],
-          summary: "List supported currencies with conversion rates",
+          summary: "List supported currencies with latest exchange rates",
           description:
-            "Public endpoint. Returns the default base currency and bidirectional conversion rates between it and every other supported currency. No authentication required.",
+            "Public endpoint. Returns up to 50 supported currencies and their latest rates relative to the base currency. No authentication required.",
           responses: {
-            200: {
-              description: "Default currency and conversion rates",
-              content: {
-                "application/json": {
-                  schema: {
-                    allOf: [
-                      { $ref: "#/components/schemas/SuccessResponse" },
-                      {
-                        type: "object",
-                        properties: {
-                          data: {
-                            $ref: "#/components/schemas/CurrencyListResponse",
-                          },
-                        },
-                      },
-                    ],
-                  },
-                },
-              },
-            },
+            200: { description: "Currency list with rates" },
             500: { description: "Server error" },
           },
         },
@@ -2660,43 +2624,13 @@ const options = {
       "/api/currencies/convert": {
         get: {
           tags: ["Currencies"],
-          summary: "Preview currency conversion",
+          summary: "Get wallet currency conversion rates",
           description:
-            "Public endpoint for automatic conversion preview before a wallet transfer. No authentication required.",
-          parameters: [
-            {
-              name: "from",
-              in: "query",
-              required: true,
-              schema: { type: "string", example: "INR" },
-              description: "Source currency code",
-            },
-            {
-              name: "to",
-              in: "query",
-              required: true,
-              schema: { type: "string", example: "USD" },
-              description: "Destination currency code",
-            },
-            {
-              name: "amount",
-              in: "query",
-              required: true,
-              schema: { type: "number", example: 100000 },
-              description: "Amount to convert",
-            },
-            {
-              name: "amountIn",
-              in: "query",
-              required: false,
-              schema: { type: "string", enum: ["from", "to"], default: "from" },
-              description:
-                "Use from when amount is in the source currency, or to when amount is in the destination currency.",
-            },
-          ],
+            "Returns the user's default currency and all unique wallet currencies, plus exchange rates for every ordered pair between them. Requires authentication and completed onboarding.",
+          security: [{ bearerAuth: [] }],
           responses: {
             200: {
-              description: "Conversion preview",
+              description: "Wallet currency conversions",
               content: {
                 "application/json": {
                   schema: {
@@ -2715,7 +2649,8 @@ const options = {
                 },
               },
             },
-            400: { description: "Invalid currency or amount" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
             503: { description: "Exchange rates unavailable" },
             500: { description: "Server error" },
           },

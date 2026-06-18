@@ -28,25 +28,6 @@ const roundCurrencyAmount = (amount, decimalPlaces = 2) => {
   return Math.round(amount * factor) / factor;
 };
 
-const roundExchangeRate = (rate) => {
-  if (!Number.isFinite(rate) || rate <= 0) {
-    return rate;
-  }
-
-  if (rate >= 1) {
-    return roundCurrencyAmount(rate, 2);
-  }
-
-  for (const decimalPlaces of [2, 4, 6, 8]) {
-    const rounded = roundCurrencyAmount(rate, decimalPlaces);
-    if (rounded > 0) {
-      return rounded;
-    }
-  }
-
-  return rate;
-};
-
 const convertAmount = ({
   amount,
   fromCurrency,
@@ -98,52 +79,6 @@ const getUnitExchangeRate = ({ fromCurrency, toCurrency, rates, baseCurrency }) 
     baseCurrency,
     decimalPlaces: 8,
   });
-};
-
-const buildDefaultCurrencyConversions = ({
-  defaultCurrency,
-  currencyCodes,
-  rates,
-  baseCurrency,
-}) => {
-  const defaultCode = normalizeCurrencyCode(defaultCurrency);
-  const conversions = [];
-
-  for (const code of currencyCodes) {
-    const targetCode = normalizeCurrencyCode(code);
-    if (targetCode === defaultCode) {
-      continue;
-    }
-
-    conversions.push(
-      {
-        from: defaultCode,
-        to: targetCode,
-        rate: roundExchangeRate(
-          getUnitExchangeRate({
-            fromCurrency: defaultCode,
-            toCurrency: targetCode,
-            rates,
-            baseCurrency,
-          }),
-        ),
-      },
-      {
-        from: targetCode,
-        to: defaultCode,
-        rate: roundExchangeRate(
-          getUnitExchangeRate({
-            fromCurrency: targetCode,
-            toCurrency: defaultCode,
-            rates,
-            baseCurrency,
-          }),
-        ),
-      },
-    );
-  }
-
-  return conversions;
 };
 
 const resolveConversionAmounts = async ({
@@ -315,13 +250,91 @@ const resolveTransactionAmount = async ({
   };
 };
 
+const buildUserWalletCurrencyList = (defaultCurrency, walletCurrencies = []) => {
+  const defaultCode = normalizeCurrencyCode(defaultCurrency || "USD");
+  const seen = new Set([defaultCode]);
+  const result = [defaultCode];
+
+  for (const currency of walletCurrencies) {
+    const code = normalizeCurrencyCode(currency);
+    if (!code || seen.has(code)) {
+      continue;
+    }
+    seen.add(code);
+    result.push(code);
+  }
+
+  return result;
+};
+
+const buildWalletConversionMatrix = async ({
+  defaultCurrency,
+  walletCurrencies = [],
+}) => {
+  const userWalletCurrencies = buildUserWalletCurrencyList(
+    defaultCurrency,
+    walletCurrencies,
+  );
+
+  if (userWalletCurrencies.length < 2) {
+    return {
+      userWalletCurrencies,
+      conversions: [],
+    };
+  }
+
+  const [activeCurrencies, rateSnapshot] = await Promise.all([
+    Currency.find({
+      code: { $in: userWalletCurrencies },
+      isActive: true,
+    })
+      .select("code")
+      .lean(),
+    getLatestExchangeRates(),
+  ]);
+
+  const activeCodes = new Set(activeCurrencies.map((currency) => currency.code));
+  const { rates, baseCurrency } = rateSnapshot;
+  const conversions = [];
+
+  for (const from of userWalletCurrencies) {
+    if (!activeCodes.has(from)) {
+      continue;
+    }
+
+    for (const to of userWalletCurrencies) {
+      if (from === to || !activeCodes.has(to)) {
+        continue;
+      }
+
+      const rate = getUnitExchangeRate({
+        fromCurrency: from,
+        toCurrency: to,
+        rates,
+        baseCurrency,
+      });
+
+      conversions.push({
+        from,
+        to,
+        rate: roundCurrencyAmount(rate, 2),
+      });
+    }
+  }
+
+  return {
+    userWalletCurrencies,
+    conversions,
+  };
+};
+
 module.exports = {
   normalizeCurrencyCode,
   convertAmount,
   getUnitExchangeRate,
-  buildDefaultCurrencyConversions,
+  buildUserWalletCurrencyList,
+  buildWalletConversionMatrix,
   resolveConversionAmounts,
   resolveTransactionAmount,
   roundCurrencyAmount,
-  roundExchangeRate,
 };

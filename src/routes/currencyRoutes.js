@@ -1,4 +1,6 @@
 const express = require("express");
+const authMiddleware = require("../middlewares/authMiddleware");
+const requireOnboarding = require("../middlewares/requireOnboarding");
 const {
   listCurrencies,
   convertCurrency,
@@ -7,6 +9,6 @@ const {
 const router = express.Router();
 
 router.get("/", listCurrencies);
-router.get("/convert", convertCurrency);
+router.get("/convert", authMiddleware, requireOnboarding, convertCurrency);
 
 module.exports = router;
