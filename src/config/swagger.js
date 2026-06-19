@@ -60,6 +60,11 @@ const options = {
           scheme: "bearer",
           bearerFormat: "JWT",
         },
+        appSettingsApiKey: {
+          type: "apiKey",
+          in: "header",
+          name: "x-api-key",
+        },
       },
       schemas: {
         SuccessResponse: {
@@ -75,6 +80,19 @@ const options = {
           properties: {
             success: { type: "boolean", example: false },
             message: { type: "string", example: "Something went wrong" },
+          },
+        },
+        AppSettingsJson: {
+          type: "object",
+          properties: {
+            appConfig: {
+              type: "object",
+              properties: {
+                version: { type: "string", example: "1.0.0" },
+              },
+            },
+            adsConfig: { type: "object" },
+            urlConfig: { type: "object" },
           },
         },
         SignupRequest: {
@@ -2609,6 +2627,62 @@ const options = {
           },
         },
       },
+      "/api/dashboard": {
+        get: {
+          tags: ["Dashboard"],
+          summary: "Get dashboard bootstrap data",
+          description:
+            "Returns user profile, ordered wallets with balances, paginated transactions for the first wallet in order, and upcoming planned payment occurrences within the requested day range.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "startDate",
+              in: "query",
+              schema: { type: "string", format: "date-time" },
+              description: "Filter first-wallet transactions from this date",
+            },
+            {
+              name: "endDate",
+              in: "query",
+              schema: { type: "string", format: "date-time" },
+              description: "Filter first-wallet transactions until this date",
+            },
+            {
+              name: "page",
+              in: "query",
+              schema: { type: "integer", default: 1, minimum: 1 },
+              description: "Page number for first-wallet transactions",
+            },
+            {
+              name: "perPage",
+              in: "query",
+              schema: {
+                type: "integer",
+                default: 20,
+                minimum: 1,
+                maximum: 100,
+              },
+              description: "Items per page for first-wallet transactions",
+            },
+            {
+              name: "days",
+              in: "query",
+              required: true,
+              schema: { type: "integer", minimum: 0 },
+              description:
+                "Number of days ahead to include upcoming planned payments",
+            },
+          ],
+          responses: {
+            200: { description: "Dashboard data" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+            403: { description: "Onboarding not completed" },
+            404: { description: "User not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
       "/api/currencies": {
         get: {
           tags: ["Currencies"],
@@ -2671,23 +2745,77 @@ const options = {
                     type: "object",
                     properties: {
                       appJson: {
-                        type: "object",
-                        properties: {
-                          appConfig: {
-                            type: "object",
-                            properties: {
-                              version: { type: "string", example: "1.0.0" },
-                            },
-                          },
-                          adsConfig: { type: "object" },
-                          urlConfig: { type: "object" },
-                        },
+                        $ref: "#/components/schemas/AppSettingsJson",
                       },
                     },
                   },
                 },
               },
             },
+            500: { description: "Server error" },
+          },
+        },
+        put: {
+          tags: ["App Settings"],
+          summary: "Update mobile app configuration",
+          description:
+            "Admin endpoint. Merges the provided sections into the stored app settings. Requires the x-api-key header.",
+          security: [{ appSettingsApiKey: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["appJson"],
+                  properties: {
+                    appJson: {
+                      $ref: "#/components/schemas/AppSettingsJson",
+                    },
+                  },
+                },
+                example: {
+                  appJson: {
+                    appConfig: {
+                      version: "1.0.1",
+                    },
+                    urlConfig: {
+                      supportEmail: "support@techflit.com",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: "Updated app settings",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: {
+                            type: "object",
+                            properties: {
+                              appJson: {
+                                $ref: "#/components/schemas/AppSettingsJson",
+                              },
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            400: { description: "Invalid request body" },
+            401: { description: "Invalid or missing API key" },
+            503: { description: "APP_SETTINGS_API_KEY is not configured" },
             500: { description: "Server error" },
           },
         },

@@ -23,7 +23,7 @@ const exchangeRateSchema = new mongoose.Schema(
 
     source: {
       type: String,
-      default: "open.er-api.com",
+      default: "currency-conversion-and-exchange-rates.p.rapidapi.com",
     },
 
     fetchedAt: {

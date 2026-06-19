@@ -6,22 +6,17 @@ const Wallet = require("../models/Wallet");
 const User = require("../models/User");
 const TransactionCategory = require("../models/TransactionCategory");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
+const {
+  startOfDay,
+  endOfDay,
+  occurrenceKey,
+  generateOccurrences,
+  fetchPlannedPaymentOccurrences,
+} = require("../utils/plannedPaymentOccurrences");
 
 const REPEAT_UNITS = ["DAYS", "WEEKS", "MONTHS", "YEARS"];
 const OCCURRENCE_TYPES = ["ALL", "UPCOMING", "OVERDUE"];
 const DECISION_TYPES = ["ALL", "ACCEPTED", "DECLINED"];
-
-const startOfDay = (date) => {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
-
-const endOfDay = (date) => {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
-};
 
 const parseDate = (value) => {
   if (!value) {
@@ -30,33 +25,6 @@ const parseDate = (value) => {
 
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
-};
-
-const padDatePart = (value) => String(value).padStart(2, "0");
-
-const occurrenceKey = (date) => {
-  const d = startOfDay(date);
-  return [
-    d.getFullYear(),
-    padDatePart(d.getMonth() + 1),
-    padDatePart(d.getDate()),
-  ].join("-");
-};
-
-const addRepeatInterval = (date, interval, unit) => {
-  const next = new Date(date);
-
-  if (unit === "DAYS") {
-    next.setDate(next.getDate() + interval);
-  } else if (unit === "WEEKS") {
-    next.setDate(next.getDate() + interval * 7);
-  } else if (unit === "MONTHS") {
-    next.setMonth(next.getMonth() + interval);
-  } else if (unit === "YEARS") {
-    next.setFullYear(next.getFullYear() + interval);
-  }
-
-  return next;
 };
 
 const normalizePlannedType = (value) => {
@@ -222,80 +190,6 @@ const buildPlannedPaymentPayload = async (req, res) => {
       normalizedPlannedType === "ONE_TIME" ? 1 : parsedRepeatUntilTimes,
   };
 };
-
-const generateOccurrences = (plannedPayment, today, rangeEnd, includeOverdue) => {
-  const decisions = new Map();
-  (plannedPayment.decisions || []).forEach((decision) => {
-    decisions.set(decision.occurrenceKey, decision);
-
-    if (decision.occurrenceDate) {
-      decisions.set(occurrenceKey(decision.occurrenceDate), decision);
-    }
-  });
-
-  const totalOccurrences =
-    plannedPayment.plannedType === "ONE_TIME"
-      ? 1
-      : plannedPayment.repeatUntilTimes;
-
-  const occurrences = [];
-  let current = startOfDay(plannedPayment.startDate);
-
-  for (let index = 1; index <= totalOccurrences; index += 1) {
-    const key = occurrenceKey(current);
-    const decision = decisions.get(key);
-
-    if (!decision) {
-      const occurrenceDate = startOfDay(current);
-      const isOverdue = occurrenceDate < today;
-      const isUpcoming = occurrenceDate >= today && occurrenceDate <= rangeEnd;
-
-      if ((includeOverdue && isOverdue) || isUpcoming) {
-        occurrences.push({
-          plannedPayment,
-          occurrence: {
-            occurrenceKey: key,
-            occurrenceNumber: index,
-            occurrenceDate,
-            status: isOverdue ? "OVERDUE" : "UPCOMING",
-          },
-        });
-      }
-    }
-
-    if (plannedPayment.plannedType === "ONE_TIME") {
-      break;
-    }
-
-    current = addRepeatInterval(
-      current,
-      plannedPayment.repeatInterval,
-      plannedPayment.repeatUnit,
-    );
-  }
-
-  return occurrences;
-};
-
-const formatOccurrence = ({ plannedPayment, occurrence }) => ({
-  _id: `${plannedPayment._id}:${occurrence.occurrenceKey}`,
-  plannedPaymentId: plannedPayment._id,
-  occurrenceKey: occurrence.occurrenceKey,
-  occurrenceNumber: occurrence.occurrenceNumber,
-  occurrenceDate: occurrence.occurrenceDate,
-  status: occurrence.status,
-  type: plannedPayment.type,
-  title: plannedPayment.title,
-  amount: plannedPayment.amount,
-  description: plannedPayment.description,
-  plannedType: plannedPayment.plannedType,
-  startDate: plannedPayment.startDate,
-  repeatInterval: plannedPayment.repeatInterval,
-  repeatUnit: plannedPayment.repeatUnit,
-  repeatUntilTimes: plannedPayment.repeatUntilTimes,
-  walletId: plannedPayment.walletId,
-  categoryId: plannedPayment.categoryId,
-});
 
 const formatDecision = ({ plannedPayment, decision }) => ({
   _id: `${plannedPayment._id}:${decision.occurrenceKey}`,
@@ -491,43 +385,12 @@ const listPlannedPaymentOccurrences = async (req, res) => {
       return errorResponse(res, "type must be ALL, UPCOMING or OVERDUE", 400);
     }
 
-    const today = startOfDay(new Date());
-    const rangeEnd = endOfDay(today);
-    rangeEnd.setDate(rangeEnd.getDate() + days);
-
-    const plannedPayments = await PlannedPayment.find({
-      userId,
-      status: "ACTIVE",
-      isDeleted: false,
-      startDate: { $lte: rangeEnd },
-    })
-      .populate("walletId", "walletName")
-      .populate("categoryId", "name")
-      .lean();
-
-    const includeOverdue =
-      occurrenceType === "ALL" || occurrenceType === "OVERDUE";
-
-    let items = plannedPayments.flatMap((plannedPayment) =>
-      generateOccurrences(plannedPayment, today, rangeEnd, includeOverdue),
-    );
-
-    if (occurrenceType !== "ALL") {
-      items = items.filter(
-        (item) => item.occurrence.status === occurrenceType,
-      );
-    }
-
-    items.sort(
-      (a, b) =>
-        a.occurrence.occurrenceDate.getTime() -
-        b.occurrence.occurrenceDate.getTime(),
-    );
-
-    return successResponse(res, "Planned payments fetched successfully", {
-      items: items.map(formatOccurrence),
-      count: items.length,
+    const result = await fetchPlannedPaymentOccurrences(userId, {
+      days,
+      occurrenceType,
     });
+
+    return successResponse(res, "Planned payments fetched successfully", result);
   } catch (error) {
     return errorResponse(res, error.message);
   }

@@ -20,6 +20,7 @@ const plannedPaymentRoutes = require("./routes/plannedPaymentRoutes");
 const supportRoutes = require("./routes/supportRoutes");
 const appSettingsRoutes = require("./routes/appSettingsRoutes");
 const currencyRoutes = require("./routes/currencyRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
 const { startReceiptPurgeCron } = require("./jobs/receiptPurgeCron");
 const { startExchangeRateCron } = require("./jobs/exchangeRateCron");
 
@@ -49,6 +50,7 @@ app.use("/api/planned-payments", plannedPaymentRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/app-settings", appSettingsRoutes);
 app.use("/api/currencies", currencyRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get("/api/docs.json", (req, res) => {
   res.setHeader("Content-Type", "application/json");

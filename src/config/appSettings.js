@@ -1,4 +1,4 @@
-const getAppSettingsJson = () => ({
+const getDefaultAppSettingsJson = () => ({
   appConfig: {
     version: "1.0.0",
   },
@@ -39,5 +39,5 @@ const getAppSettingsJson = () => ({
 });
 
 module.exports = {
-  getAppSettingsJson,
+  getDefaultAppSettingsJson,
 };

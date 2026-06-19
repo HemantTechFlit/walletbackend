@@ -6,9 +6,13 @@ const BASE_CURRENCY = (process.env.EXCHANGE_RATE_BASE_CURRENCY || "USD")
   .trim()
   .toUpperCase();
 
+const EXCHANGE_RATE_API_HOST =
+  process.env.EXCHANGE_RATE_API_HOST ||
+  "currency-conversion-and-exchange-rates.p.rapidapi.com";
+
 const EXCHANGE_RATE_API_URL =
   process.env.EXCHANGE_RATE_API_URL ||
-  `https://open.er-api.com/v6/latest/${BASE_CURRENCY}`;
+  `https://${EXCHANGE_RATE_API_HOST}/latest?base=${BASE_CURRENCY}`;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -25,7 +29,20 @@ const ratesMapToObject = (rates) => {
 };
 
 const fetchRatesFromProvider = async () => {
-  const response = await fetch(EXCHANGE_RATE_API_URL);
+  const apiKey = process.env.RAPIDAPI_KEY?.trim();
+
+  if (!apiKey) {
+    throw new Error("RAPIDAPI_KEY is required to fetch exchange rates");
+  }
+
+  const response = await fetch(EXCHANGE_RATE_API_URL, {
+    headers: {
+      "X-RapidAPI-Key": apiKey,
+      "X-RapidAPI-Host": EXCHANGE_RATE_API_HOST,
+    },
+  });
+
+  console.log("fetchRatesFromProvider");
 
   if (!response.ok) {
     throw new Error(`Exchange rate API failed with status ${response.status}`);
@@ -33,8 +50,16 @@ const fetchRatesFromProvider = async () => {
 
   const payload = await response.json();
 
-  if (payload.result && payload.result !== "success") {
-    throw new Error(payload["error-type"] || "Exchange rate API returned an error");
+  const hasError =
+    payload.success === false ||
+    (payload.result && payload.result !== "success");
+
+  if (hasError) {
+    throw new Error(
+      payload.message ||
+        payload["error-type"] ||
+        "Exchange rate API returned an error",
+    );
   }
 
   const rates = payload.rates || payload.conversion_rates;
@@ -43,16 +68,22 @@ const fetchRatesFromProvider = async () => {
   }
 
   return {
-    baseCurrency: (payload.base_code || payload.base || BASE_CURRENCY).toUpperCase(),
+    baseCurrency: (
+      payload.base ||
+      payload.base_code ||
+      BASE_CURRENCY
+    ).toUpperCase(),
     rates,
-    rateDate: payload.time_last_update_utc || payload.date || null,
-    source: EXCHANGE_RATE_API_URL,
+    rateDate: payload.date || payload.time_last_update_utc || null,
+    source: EXCHANGE_RATE_API_HOST,
   };
 };
 
 const filterRatesForSupportedCurrencies = (rates, supportedCodes) => {
   const filtered = new Map();
-  const supportedSet = new Set(supportedCodes.map((code) => code.toUpperCase()));
+  const supportedSet = new Set(
+    supportedCodes.map((code) => code.toUpperCase()),
+  );
 
   supportedSet.add(BASE_CURRENCY);
 
@@ -70,6 +101,8 @@ const filterRatesForSupportedCurrencies = (rates, supportedCodes) => {
 
   return filtered;
 };
+
+console.log("refreshExchangeRates called");
 
 const refreshExchangeRates = async ({ force = false } = {}) => {
   const latest = await ExchangeRate.findOne().sort({ fetchedAt: -1 }).lean();
@@ -98,7 +131,9 @@ const refreshExchangeRates = async ({ force = false } = {}) => {
   );
 
   if (filteredRates.size < 2) {
-    throw new Error("Not enough exchange rates were returned for supported currencies");
+    throw new Error(
+      "Not enough exchange rates were returned for supported currencies",
+    );
   }
 
   const snapshot = await ExchangeRate.findOneAndUpdate(
@@ -163,6 +198,7 @@ const assertActiveCurrency = async (currencyCode) => {
 
 module.exports = {
   BASE_CURRENCY,
+  EXCHANGE_RATE_API_HOST,
   EXCHANGE_RATE_API_URL,
   refreshExchangeRates,
   getLatestExchangeRates,
