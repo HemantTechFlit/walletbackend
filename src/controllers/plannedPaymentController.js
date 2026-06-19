@@ -376,6 +376,9 @@ const listPlannedPaymentOccurrences = async (req, res) => {
     const userId = req.user.userId;
     const days = Number(req.query.days);
     const occurrenceType = String(req.query.type || "ALL").toUpperCase();
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
 
     if (!Number.isInteger(days) || days < 0) {
       return errorResponse(res, "days must be a non-negative integer", 400);
@@ -390,7 +393,17 @@ const listPlannedPaymentOccurrences = async (req, res) => {
       occurrenceType,
     });
 
-    return successResponse(res, "Planned payments fetched successfully", result);
+    const total = result.count;
+
+    return successResponse(res, "Planned payments fetched successfully", {
+      items: result.items.slice(skip, skip + limit),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    });
   } catch (error) {
     return errorResponse(res, error.message);
   }

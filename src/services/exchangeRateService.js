@@ -102,8 +102,6 @@ const filterRatesForSupportedCurrencies = (rates, supportedCodes) => {
   return filtered;
 };
 
-console.log("refreshExchangeRates called");
-
 const refreshExchangeRates = async ({ force = false } = {}) => {
   const latest = await ExchangeRate.findOne().sort({ fetchedAt: -1 }).lean();
 

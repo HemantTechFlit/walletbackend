@@ -19,52 +19,17 @@ const { getEffectivePlanForUser } = require("../utils/planLimits");
 const { assertActiveCurrency } = require("../services/exchangeRateService");
 const { buildReceiptRetentionInfo, buildReceiptRetentionWarnings, buildReceiptStorageInfo } = require("../utils/receiptUpload");
 const { uploadProfileImage } = require("../utils/r2Storage");
-
-const syncUserSelectionsFromDb = async (userId) => {
-  const [wallets, categories] = await Promise.all([
-    Wallet.find({ userId, isDeleted: false })
-      .select(
-        "walletName slug description icon color currency sortOrder createdAt",
-      )
-      .sort({ sortOrder: 1, createdAt: -1 })
-      .lean(),
-    TransactionCategory.find({ userId, isDeleted: false })
-      .select("name slug description icon color sortOrder createdAt")
-      .sort({ sortOrder: 1, createdAt: -1 })
-      .lean(),
-  ]);
-
-  await User.findByIdAndUpdate(userId, {
-    $set: {
-      selectedWallets: wallets.map((w) => w._id),
-      selectedCategories: categories.map((c) => c._id),
-      updatedAt: new Date(),
-    },
-  });
-
-  return { wallets, categories };
-};
+const { buildUserProfilePayload } = require("../utils/userProfile");
 
 const getMe = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    const user = await User.findById(userId)
-      .populate(
-        "defaultWalletId",
-        "walletName slug description icon color currency sortOrder",
-      )
-      .populate("subscriptionId");
+    const userPayload = await buildUserProfilePayload(userId);
 
-    if (!user || user.isDeleted) {
+    if (!userPayload) {
       return errorResponse(res, "User not found", 404);
     }
-
-    const { wallets, categories } = await syncUserSelectionsFromDb(userId);
-
-    const userPayload = user.toObject();
-    userPayload.selectedWallets = wallets;
-    userPayload.selectedCategories = categories;
 
     const { plan } = await getEffectivePlanForUser(userId);
     const { showWarning, deletingDate } = buildReceiptRetentionInfo(userPayload);

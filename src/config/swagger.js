@@ -1970,6 +1970,21 @@ const options = {
                 default: "ALL",
               },
             },
+            {
+              name: "page",
+              in: "query",
+              schema: { type: "integer", default: 1, minimum: 1 },
+            },
+            {
+              name: "limit",
+              in: "query",
+              schema: {
+                type: "integer",
+                default: 20,
+                minimum: 1,
+                maximum: 100,
+              },
+            },
           ],
           responses: {
             200: {
@@ -1990,7 +2005,15 @@ const options = {
                               $ref: "#/components/schemas/PlannedPaymentOccurrence",
                             },
                           },
-                          count: { type: "integer" },
+                          pagination: {
+                            type: "object",
+                            properties: {
+                              page: { type: "integer" },
+                              limit: { type: "integer" },
+                              total: { type: "integer" },
+                              totalPages: { type: "integer" },
+                            },
+                          },
                         },
                       },
                     },

@@ -20,6 +20,27 @@ const sortWalletsByEffectiveOrder = (wallets, walletOrder = []) => {
   return [...customOrdered, ...remaining];
 };
 
+const formatWalletOrder = (walletOrder = [], wallets = []) => {
+  const walletById = new Map(
+    wallets.map((wallet) => [wallet._id.toString(), wallet]),
+  );
+
+  return walletOrder
+    .map((walletId) => {
+      const wallet = walletById.get(walletId.toString());
+      if (!wallet) {
+        return null;
+      }
+
+      return {
+        _id: wallet._id,
+        walletName: wallet.walletName,
+      };
+    })
+    .filter(Boolean);
+};
+
 module.exports = {
   sortWalletsByEffectiveOrder,
+  formatWalletOrder,
 };

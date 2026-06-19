@@ -18,6 +18,7 @@ const { seedPlansIfEmpty, assignBasicPlanToUser } = require("../utils/planLimits
 const sendEmail = require("../utils/sendEmail");
 const { verifyProviderIdToken } = require("../utils/socialAuth");
 const { assertActiveCurrency } = require("../services/exchangeRateService");
+const { buildUserProfilePayload } = require("../utils/userProfile");
 const Wallet = require("../models/Wallet");
 const TransactionCategory = require("../models/TransactionCategory");
 
@@ -315,8 +316,7 @@ const createAuthSession = async ({ user, req }) => {
     expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
   });
 
-  const responseUser = user.toObject ? user.toObject() : user;
-  delete responseUser.passwordHash;
+  const responseUser = await buildUserProfilePayload(user._id);
 
   return {
     accessToken,

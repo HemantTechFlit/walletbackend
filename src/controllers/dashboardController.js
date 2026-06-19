@@ -54,28 +54,7 @@ const normalizeTransactionReferences = (transaction) => {
   return normalized;
 };
 
-const syncUserSelectionsFromDb = async (userId) => {
-  const [wallets, categories] = await Promise.all([
-    Wallet.find({ userId, isDeleted: false })
-      .select("walletName slug description icon color currency sortOrder createdAt")
-      .sort({ sortOrder: 1, createdAt: -1 })
-      .lean(),
-    TransactionCategory.find({ userId, isDeleted: false })
-      .select("name slug description icon color sortOrder createdAt")
-      .sort({ sortOrder: 1, createdAt: -1 })
-      .lean(),
-  ]);
-
-  await User.findByIdAndUpdate(userId, {
-    $set: {
-      selectedWallets: wallets.map((w) => w._id),
-      selectedCategories: categories.map((c) => c._id),
-      updatedAt: new Date(),
-    },
-  });
-
-  return { wallets, categories };
-};
+const { syncUserSelectionsFromDb } = require("../utils/userProfile");
 
 const getDashboard = async (req, res) => {
   try {
