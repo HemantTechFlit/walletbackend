@@ -124,17 +124,19 @@ const setDefaultCurrency = async (req, res) => {
       return errorResponse(res, error.message, error.statusCode || 400);
     }
 
-    const user = await User.findByIdAndUpdate(
-      req.user.userId,
-      { $set: { currency: currencyCode, updatedAt: new Date() } },
-      { new: true },
-    ).select("-passwordHash");
+    await User.findByIdAndUpdate(req.user.userId, {
+      $set: { currency: currencyCode, updatedAt: new Date() },
+    });
 
-    if (!user || user.isDeleted) {
+    const userPayload = await buildUserProfilePayload(req.user.userId);
+
+    if (!userPayload) {
       return errorResponse(res, "User not found", 404);
     }
 
-    return successResponse(res, "Default currency updated", user);
+    return successResponse(res, "Default currency updated", {
+      user: userPayload,
+    });
   } catch (error) {
     return errorResponse(res, error.message);
   }
