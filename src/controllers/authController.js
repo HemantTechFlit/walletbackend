@@ -807,7 +807,7 @@ const completeOnboarding = async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    const updatedUser = await User.findByIdAndUpdate(
+    await User.findByIdAndUpdate(
       userId,
       {
         selectedWallets: createdWallets.map((wallet) => wallet._id),
@@ -822,7 +822,6 @@ const completeOnboarding = async (req, res) => {
         onboardingCompleted: true,
       },
       {
-        new: true,
         session,
       },
     );
@@ -835,17 +834,21 @@ const completeOnboarding = async (req, res) => {
 
     await session.commitTransaction();
 
+    const userPayload = await buildUserProfilePayload(userId);
+
+    if (!userPayload) {
+      return errorResponse(res, "User not found", 404);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Success Response
     |--------------------------------------------------------------------------
     */
 
-    return successResponse(
-      res,
-      "Onboarding completed successfully",
-      updatedUser,
-    );
+    return successResponse(res, "Onboarding completed successfully", {
+      user: userPayload,
+    });
   } catch (error) {
     await session.abortTransaction();
 
