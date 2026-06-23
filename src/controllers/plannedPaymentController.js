@@ -94,9 +94,13 @@ const buildPlannedPaymentPayload = async (req, res) => {
     return null;
   }
 
-  if (!categoryId || !mongoose.isValidObjectId(categoryId)) {
-    errorResponse(res, "Valid categoryId is required", 400);
-    return null;
+  let resolvedCategoryId = null;
+  if (categoryId !== undefined && categoryId !== null && categoryId !== "") {
+    if (!mongoose.isValidObjectId(categoryId)) {
+      errorResponse(res, "Valid categoryId is required", 400);
+      return null;
+    }
+    resolvedCategoryId = categoryId;
   }
 
   const normalizedType = normalizeTransactionType(type);
@@ -161,7 +165,9 @@ const buildPlannedPaymentPayload = async (req, res) => {
 
   const [wallet, category] = await Promise.all([
     assertOwnWallet(userId, resolvedWalletId),
-    assertCategoryForUser(userId, categoryId),
+    resolvedCategoryId
+      ? assertCategoryForUser(userId, resolvedCategoryId)
+      : Promise.resolve(null),
   ]);
 
   if (!wallet) {
@@ -169,7 +175,7 @@ const buildPlannedPaymentPayload = async (req, res) => {
     return null;
   }
 
-  if (!category) {
+  if (resolvedCategoryId && !category) {
     errorResponse(res, "Category not found", 404);
     return null;
   }
@@ -177,7 +183,7 @@ const buildPlannedPaymentPayload = async (req, res) => {
   return {
     userId,
     walletId: resolvedWalletId,
-    categoryId,
+    categoryId: resolvedCategoryId,
     type: normalizedType,
     title: title.trim(),
     amount: amt,
@@ -541,19 +547,29 @@ const applyOccurrenceDecision = async ({
     let transaction = null;
 
     if (normalizedAction === "ACCEPT") {
-      const [wallet, category] = await Promise.all([
-        assertOwnWallet(userId, plannedPayment.walletId, session),
-        assertCategoryForUser(userId, plannedPayment.categoryId, session),
-      ]);
+      const wallet = await assertOwnWallet(
+        userId,
+        plannedPayment.walletId,
+        session,
+      );
 
       if (!wallet) {
         await session.abortTransaction();
         return errorResponse(res, "Wallet not found", 404);
       }
 
-      if (!category) {
-        await session.abortTransaction();
-        return errorResponse(res, "Category not found", 404);
+      let category = null;
+      if (plannedPayment.categoryId) {
+        category = await assertCategoryForUser(
+          userId,
+          plannedPayment.categoryId,
+          session,
+        );
+
+        if (!category) {
+          await session.abortTransaction();
+          return errorResponse(res, "Category not found", 404);
+        }
       }
 
       const created = await WalletTransaction.create(
@@ -561,17 +577,19 @@ const applyOccurrenceDecision = async ({
           {
             userId,
             walletId: plannedPayment.walletId,
-            categoryId: plannedPayment.categoryId,
+            categoryId: plannedPayment.categoryId ?? null,
             type: plannedPayment.type,
             amount: plannedPayment.amount,
             title: plannedPayment.title,
             description: plannedPayment.description,
             transactionDate: normalizedOccurrenceDate,
-            categorySnapshot: {
-              name: category.name,
-              color: category.color,
-              icon: category.icon,
-            },
+            categorySnapshot: category
+              ? {
+                  name: category.name,
+                  color: category.color,
+                  icon: category.icon,
+                }
+              : null,
             walletSnapshot: {
               walletName: wallet.walletName,
               walletColor: wallet.color,

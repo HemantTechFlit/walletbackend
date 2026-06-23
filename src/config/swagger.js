@@ -766,21 +766,19 @@ const options = {
         },
         CreatePlannedPaymentRequest: {
           type: "object",
-          required: [
-            "categoryId",
-            "type",
-            "title",
-            "amount",
-            "plannedType",
-            "startDate",
-          ],
+          required: ["type", "title", "amount", "plannedType", "startDate"],
           properties: {
             walletId: {
               type: "string",
               description:
                 "Optional. Uses user's defaultWalletId when omitted.",
             },
-            categoryId: { type: "string" },
+            categoryId: {
+              type: "string",
+              nullable: true,
+              description:
+                "Optional. When omitted, the planned payment is created without a category.",
+            },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             title: { type: "string", example: "Car service" },
             amount: { type: "number", example: 120 },
@@ -867,7 +865,7 @@ const options = {
             },
             repeatUntilTimes: { type: "integer", nullable: true },
             walletId: { type: "object" },
-            categoryId: { type: "object" },
+            categoryId: { type: "object", nullable: true },
           },
         },
         CreateVoiceTransactionDraftRequest: {

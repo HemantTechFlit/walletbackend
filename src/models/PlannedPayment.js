@@ -54,7 +54,7 @@ const plannedPaymentSchema = new mongoose.Schema(
     categoryId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "TransactionCategory",
-      required: true,
+      default: null,
       index: true,
     },
 
