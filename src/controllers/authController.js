@@ -471,6 +471,11 @@ const signup = async (req, res) => {
       return errorResponse(res, "Invalid email", 400);
     }
 
+    const normalizedMobile = String(mobileNumber).trim();
+    if (!validator.isMobilePhone(normalizedMobile)) {
+      return errorResponse(res, "Invalid mobile number", 400);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Check Existing User
@@ -507,7 +512,7 @@ const signup = async (req, res) => {
         {
           fullName,
           email,
-          mobileNumber,
+          mobileNumber: normalizedMobile,
           passwordHash: hashedPassword,
           authProviders: [
             {
