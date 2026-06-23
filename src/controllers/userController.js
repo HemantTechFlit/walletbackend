@@ -91,17 +91,17 @@ const updateMe = async (req, res) => {
       updates.profileImage = profileImage || null;
     }
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { $set: updates },
-      { new: true },
-    ).select("-passwordHash");
+    await User.findByIdAndUpdate(userId, { $set: updates });
 
-    if (!user || user.isDeleted) {
+    const userPayload = await buildUserProfilePayload(userId);
+
+    if (!userPayload) {
       return errorResponse(res, "User not found", 404);
     }
 
-    return successResponse(res, "Profile updated successfully", user);
+    return successResponse(res, "Profile updated successfully", {
+      user: userPayload,
+    });
   } catch (error) {
     const code = error.statusCode || 500;
     return errorResponse(res, error.message, code);
