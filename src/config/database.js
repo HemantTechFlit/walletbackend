@@ -1,5 +1,7 @@
 const mongoose = require("mongoose");
 const { ensureCurrenciesSeeded } = require("../config/currencySeed");
+const { ensureDefaultAdminSeeded } = require("../config/adminSeed");
+const { ensureOnboardingTemplatesSeeded } = require("../config/onboardingSeed");
 const { refreshExchangeRates } = require("../services/exchangeRateService");
 
 const connectDB = async () => {
@@ -30,6 +32,8 @@ const connectDB = async () => {
     console.log("✅ MongoDB Connected");
 
     await ensureCurrenciesSeeded();
+    await ensureDefaultAdminSeeded();
+    await ensureOnboardingTemplatesSeeded();
     try {
       await refreshExchangeRates({ force: false });
     } catch (error) {

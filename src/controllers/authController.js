@@ -21,205 +21,10 @@ const { assertActiveCurrency } = require("../services/exchangeRateService");
 const { buildUserProfilePayload } = require("../utils/userProfile");
 const Wallet = require("../models/Wallet");
 const TransactionCategory = require("../models/TransactionCategory");
-
-const DEFAULT_ONBOARDING_WALLETS = [
-  {
-    slug: "uber",
-    walletName: "Uber Wallet",
-    description: "",
-    icon: "CustomIcons.uber",
-    color: "0xff000000",
-    currency: "USD",
-    sortOrder: 1,
-    aliases: ["Uber Wallet"],
-  },
-  {
-    slug: "rydo",
-    walletName: "Rydo Wallet",
-    description: "",
-    icon: "CustomIcons.rydo",
-    color: "0xffff9518",
-    currency: "USD",
-    sortOrder: 2,
-    aliases: ["Rydo Wallet"],
-  },
-  {
-    slug: "ubereats",
-    walletName: "Uber Eats Wallet",
-    description: "",
-    icon: "CustomIcons.ubereats",
-    color: "0xff06c167",
-    currency: "USD",
-    sortOrder: 3,
-    aliases: ["Uber Eats Wallet"],
-  },
-  {
-    slug: "doordash",
-    walletName: "DoorDash Wallet",
-    description: "",
-    icon: "CustomIcons.doordash",
-    color: "0xfff72e08",
-    currency: "USD",
-    sortOrder: 4,
-    aliases: ["DoorDash Wallet", "Door Dash Wallet"],
-  },
-];
-
-const DEFAULT_ONBOARDING_CATEGORIES = [
-  {
-    slug: "fuel",
-    name: "Fuel",
-    description: "",
-    icon: "CustomIcons.catFuel",
-    color: "0xff4549ff",
-    sortOrder: 1,
-    type: "EXPENSE",
-    aliases: ["Fuel"],
-  },
-  {
-    slug: "service",
-    name: "Service",
-    description: "",
-    icon: "CustomIcons.catService",
-    color: "0xfff77b00",
-    sortOrder: 2,
-    type: "EXPENSE",
-    aliases: ["Service"],
-  },
-  {
-    slug: "maintenance",
-    name: "Maintenance",
-    description: "",
-    icon: "CustomIcons.catMaintenance",
-    color: "0xfff72e08",
-    sortOrder: 3,
-    type: "EXPENSE",
-    aliases: ["Maintenance"],
-  },
-  {
-    slug: "repair",
-    name: "Repair",
-    description: "",
-    icon: "CustomIcons.catRepair",
-    color: "0xff48FFC3",
-    sortOrder: 4,
-    type: "EXPENSE",
-    aliases: ["Repair"],
-  },
-  {
-    slug: "salary",
-    name: "Salary (Cash out)",
-    description: "",
-    icon: "CustomIcons.catPayout",
-    color: "0xff5cb109",
-    sortOrder: 5,
-    type: "EXPENSE",
-    aliases: ["Salary (Cash out)", "Salary"],
-  },
-  {
-    slug: "loan",
-    name: "Loan",
-    description: "",
-    icon: "CustomIcons.catLoan",
-    color: "0xffFFA800",
-    sortOrder: 6,
-    type: "EXPENSE",
-    aliases: ["Loan"],
-  },
-  {
-    slug: "borrowed",
-    name: "Borrowed",
-    description: "",
-    icon: "CustomIcons.catBorrow",
-    color: "0xff0095FF",
-    sortOrder: 7,
-    type: "INCOME",
-    aliases: ["Borrowed"],
-  },
-];
-
-const stripAliases = ({ aliases, ...item }) => item;
-
-const seedOnboardingTemplatesIfMissing = async () => {
-  await Promise.all(
-    DEFAULT_ONBOARDING_WALLETS.map(async (wallet) => {
-      const existingWallet = await Wallet.findOne({
-        isDefault: true,
-        isDeleted: false,
-        $or: [
-          { slug: wallet.slug },
-          { walletName: { $in: wallet.aliases } },
-        ],
-      });
-
-      const walletData = {
-        ...stripAliases(wallet),
-        userId: null,
-        isDefault: true,
-      };
-
-      if (existingWallet) {
-        await Wallet.updateOne(
-          { _id: existingWallet._id },
-          { $set: { ...walletData, updatedAt: new Date() } },
-        );
-        return;
-      }
-
-      await Wallet.create(walletData);
-    }),
-  );
-
-  await Promise.all(
-    DEFAULT_ONBOARDING_CATEGORIES.map(async (category) => {
-      const existingCategory = await TransactionCategory.findOne({
-        isDefault: true,
-        isDeleted: false,
-        $or: [
-          { slug: category.slug },
-          { name: { $in: category.aliases } },
-        ],
-      });
-
-      const categoryData = {
-        ...stripAliases(category),
-        userId: null,
-        isDefault: true,
-      };
-
-      if (existingCategory) {
-        await TransactionCategory.updateOne(
-          { _id: existingCategory._id },
-          { $set: { ...categoryData, updatedAt: new Date() } },
-        );
-        return;
-      }
-
-      await TransactionCategory.create(categoryData);
-    }),
-  );
-
-  await Promise.all([
-    Wallet.updateMany(
-      {
-        isDefault: true,
-        userId: null,
-        slug: { $nin: DEFAULT_ONBOARDING_WALLETS.map((wallet) => wallet.slug) },
-      },
-      { $set: { isDeleted: true, updatedAt: new Date() } },
-    ),
-    TransactionCategory.updateMany(
-      {
-        isDefault: true,
-        userId: null,
-        slug: {
-          $nin: DEFAULT_ONBOARDING_CATEGORIES.map((category) => category.slug),
-        },
-      },
-      { $set: { isDeleted: true, updatedAt: new Date() } },
-    ),
-  ]);
-};
+const {
+  formatWalletOption,
+  groupCategoriesByType,
+} = require("../services/onboardingTemplateService");
 
 const normalizeOnboardingSelections = (items) => {
   return items.reduce(
@@ -260,35 +65,6 @@ const buildTemplateSelectionQuery = ({ objectIds, slugs }) => {
     isDefault: true,
     isDeleted: false,
     ...(filters.length > 0 ? { $or: filters } : { _id: { $in: [] } }),
-  };
-};
-
-const formatWalletOption = (wallet) => ({
-  _id: wallet._id,
-  id: wallet.slug,
-  name: wallet.walletName,
-  description: wallet.description || "",
-  icon: wallet.icon || wallet.slug,
-  color: wallet.color,
-  currency: wallet.currency || "USD",
-});
-
-const formatCategoryOption = (category) => ({
-  _id: category._id,
-  id: category.slug,
-  name: category.name,
-  description: category.description || "",
-  icon: category.icon || category.slug,
-  color: category.color,
-  type: category.type || "EXPENSE",
-});
-
-const groupCategoriesByType = (categories) => {
-  const formatted = categories.map(formatCategoryOption);
-
-  return {
-    income: formatted.filter((category) => category.type === "INCOME"),
-    expense: formatted.filter((category) => category.type === "EXPENSE"),
   };
 };
 
@@ -676,7 +452,6 @@ const completeOnboarding = async (req, res) => {
   const session = await mongoose.startSession();
 
   try {
-    await seedOnboardingTemplatesIfMissing();
     session.startTransaction();
 
     const {
@@ -873,8 +648,6 @@ const completeOnboarding = async (req, res) => {
 
 const getOnboardingOptions = async (req, res) => {
   try {
-    await seedOnboardingTemplatesIfMissing();
-
     /*
     |--------------------------------------------------------------------------
     | Get Default Wallet Templates

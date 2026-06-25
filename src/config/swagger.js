@@ -7,16 +7,26 @@ const options = {
       title: "Wallet Backend API",
       version: "1.0.0",
       description:
-        "Expense / income tracker backend: authentication, onboarding, users, wallets, categories, transactions, transfers, reports, and subscriptions.",
+        "Expense / income tracker backend: authentication, admin panel auth, onboarding, users, wallets, categories, transactions, transfers, reports, and subscriptions.",
     },
     servers: [
+      // {
+      //   url: "http://69.62.81.206:3001",
+      //   description: "DriveLedger Developmenr Server",
+      // },
+
       {
-        url: "https://expense-tracker-ip37.onrender.com",
-        description: "Expense Tracker API production server",
+        url: "http://localhost:3000",
+        description: "Local development server",
       },
     ],
     tags: [
       { name: "Auth", description: "Authentication APIs" },
+      {
+        name: "Admin",
+        description:
+          "Admin panel authentication and onboarding template management (default admin seeded from ADMIN_USERNAME / ADMIN_PASSWORD on server start)",
+      },
       { name: "Onboarding", description: "Onboarding APIs" },
       { name: "Users", description: "Current user profile and preferences" },
       {
@@ -59,6 +69,15 @@ const options = {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
+          description:
+            "User access token from POST /api/auth/login or social auth.",
+        },
+        adminBearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description:
+            "Admin access token from POST /api/admin/login (JWT payload includes role: admin).",
         },
         appSettingsApiKey: {
           type: "apiKey",
@@ -1016,6 +1035,122 @@ const options = {
             },
           },
         },
+        AdminLoginRequest: {
+          type: "object",
+          required: ["username", "password"],
+          properties: {
+            username: { type: "string", example: "admin" },
+            password: { type: "string", example: "your_secure_admin_password" },
+          },
+        },
+        AdminProfile: {
+          type: "object",
+          properties: {
+            id: { type: "string", example: "6820752aebf84d7a6394c164" },
+            username: { type: "string", example: "admin" },
+            name: { type: "string", example: "Admin" },
+            lastLoginAt: {
+              type: "string",
+              format: "date-time",
+              nullable: true,
+              example: "2026-06-23T10:30:00.000Z",
+            },
+          },
+        },
+        AdminLoginData: {
+          type: "object",
+          properties: {
+            accessToken: { type: "string", example: "eyJhbGciOiJIUzI1NiIs..." },
+            refreshToken: {
+              type: "string",
+              example: "eyJhbGciOiJIUzI1NiIs...",
+            },
+            admin: { $ref: "#/components/schemas/AdminProfile" },
+          },
+        },
+        AdminLogoutRequest: {
+          type: "object",
+          properties: {
+            refreshToken: {
+              type: "string",
+              example: "eyJhbGciOiJI...",
+              description:
+                "Optional. When provided, the matching admin session is deleted.",
+            },
+          },
+        },
+        AdminOnboardingWallet: {
+          type: "object",
+          properties: {
+            _id: { type: "string", example: "6820752aebf84d7a6394c164" },
+            name: { type: "string", example: "Cash" },
+            icon: { type: "string", example: "💵" },
+            color: { type: "string", example: "0xff5cb109" },
+            currency: { type: "string", example: "USD" },
+          },
+        },
+        AdminOnboardingCategory: {
+          type: "object",
+          properties: {
+            _id: { type: "string", example: "6820752aebf84d7a6394c16a" },
+            name: { type: "string", example: "Food & Dining" },
+            icon: { type: "string", example: "🍔" },
+            color: { type: "string", example: "0xffff9518" },
+            type: {
+              type: "string",
+              enum: ["INCOME", "EXPENSE"],
+              example: "EXPENSE",
+            },
+          },
+        },
+        CreateAdminOnboardingWalletRequest: {
+          type: "object",
+          required: ["name", "icon", "color", "currency"],
+          properties: {
+            name: { type: "string", example: "Cash" },
+            icon: { type: "string", example: "💵" },
+            color: { type: "string", example: "0xff5cb109" },
+            currency: { type: "string", example: "USD" },
+          },
+        },
+        UpdateAdminOnboardingWalletRequest: {
+          type: "object",
+          required: ["name", "icon", "color", "currency"],
+          properties: {
+            name: { type: "string", example: "Main Bank Account" },
+            icon: { type: "string", example: "🏦" },
+            color: { type: "string", example: "0xff4549ff" },
+            currency: { type: "string", example: "USD" },
+          },
+        },
+        CreateAdminOnboardingCategoryRequest: {
+          type: "object",
+          required: ["name", "icon", "color", "type"],
+          properties: {
+            name: { type: "string", example: "Food & Dining" },
+            icon: { type: "string", example: "🍔" },
+            color: { type: "string", example: "0xffff9518" },
+            type: {
+              type: "string",
+              enum: ["INCOME", "EXPENSE"],
+              example: "EXPENSE",
+            },
+          },
+        },
+        UpdateAdminOnboardingCategoryRequest: {
+          type: "object",
+          required: ["name", "icon", "color", "type"],
+          properties: {
+            name: { type: "string", example: "Transport" },
+            icon: { type: "string", example: "🚗" },
+            color: { type: "string", example: "0xff4549ff" },
+            type: {
+              type: "string",
+              enum: ["INCOME", "EXPENSE"],
+              example: "EXPENSE",
+            },
+          },
+        },
       },
     },
     paths: {
@@ -1197,10 +1332,325 @@ const options = {
           },
         },
       },
+      "/api/admin/login": {
+        post: {
+          tags: ["Admin"],
+          summary: "Admin login",
+          description:
+            "Authenticate an admin user for the React admin panel. A default admin is created on server start when ADMIN_USERNAME and ADMIN_PASSWORD are set in .env and no matching admin exists yet.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminLoginRequest" },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: "Login successful with admin tokens",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: { $ref: "#/components/schemas/AdminLoginData" },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            400: { description: "Username and password are required" },
+            401: { description: "Invalid username or password" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/me": {
+        get: {
+          tags: ["Admin"],
+          summary: "Get current admin profile",
+          security: [{ adminBearerAuth: [] }],
+          responses: {
+            200: {
+              description: "Admin profile fetched",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: {
+                            type: "object",
+                            properties: {
+                              admin: {
+                                $ref: "#/components/schemas/AdminProfile",
+                              },
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            401: { description: "Unauthorized or invalid admin token" },
+            404: { description: "Admin not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/refresh-token": {
+        post: {
+          tags: ["Admin"],
+          summary: "Refresh admin access token",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RefreshTokenRequest" },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: "Token refreshed",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: {
+                            type: "object",
+                            properties: {
+                              accessToken: {
+                                type: "string",
+                                example: "eyJhbGciOiJIUzI1NiIs...",
+                              },
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            400: { description: "Refresh token is required" },
+            401: { description: "Invalid refresh token" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/logout": {
+        post: {
+          tags: ["Admin"],
+          summary: "Admin logout",
+          security: [{ adminBearerAuth: [] }],
+          requestBody: {
+            required: false,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminLogoutRequest" },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Logout successful" },
+            401: { description: "Unauthorized or invalid admin token" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/onboarding/wallets": {
+        get: {
+          tags: ["Admin"],
+          summary: "List onboarding wallet templates",
+          description:
+            "Returns default wallet templates shown during mobile onboarding and managed in the admin panel.",
+          security: [{ adminBearerAuth: [] }],
+          responses: {
+            200: { description: "Onboarding wallets fetched" },
+            401: { description: "Unauthorized or invalid admin token" },
+            500: { description: "Server error" },
+          },
+        },
+        post: {
+          tags: ["Admin"],
+          summary: "Create onboarding wallet template",
+          security: [{ adminBearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/CreateAdminOnboardingWalletRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            201: { description: "Onboarding wallet created" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized or invalid admin token" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/onboarding/wallets/{id}": {
+        put: {
+          tags: ["Admin"],
+          summary: "Update onboarding wallet template",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/UpdateAdminOnboardingWalletRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Onboarding wallet updated" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized or invalid admin token" },
+            404: { description: "Onboarding wallet not found" },
+            500: { description: "Server error" },
+          },
+        },
+        delete: {
+          tags: ["Admin"],
+          summary: "Delete onboarding wallet template",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            200: { description: "Onboarding wallet deleted" },
+            401: { description: "Unauthorized or invalid admin token" },
+            404: { description: "Onboarding wallet not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/onboarding/categories": {
+        get: {
+          tags: ["Admin"],
+          summary: "List onboarding category templates",
+          description:
+            "Returns default category templates shown during mobile onboarding and managed in the admin panel.",
+          security: [{ adminBearerAuth: [] }],
+          responses: {
+            200: { description: "Onboarding categories fetched" },
+            401: { description: "Unauthorized or invalid admin token" },
+            500: { description: "Server error" },
+          },
+        },
+        post: {
+          tags: ["Admin"],
+          summary: "Create onboarding category template",
+          security: [{ adminBearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/CreateAdminOnboardingCategoryRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            201: { description: "Onboarding category created" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized or invalid admin token" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/onboarding/categories/{id}": {
+        put: {
+          tags: ["Admin"],
+          summary: "Update onboarding category template",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/UpdateAdminOnboardingCategoryRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Onboarding category updated" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized or invalid admin token" },
+            404: { description: "Onboarding category not found" },
+            500: { description: "Server error" },
+          },
+        },
+        delete: {
+          tags: ["Admin"],
+          summary: "Delete onboarding category template",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            200: { description: "Onboarding category deleted" },
+            401: { description: "Unauthorized or invalid admin token" },
+            404: { description: "Onboarding category not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
       "/api/auth/onboarding-options": {
         get: {
           tags: ["Onboarding"],
           summary: "Get onboarding wallet/category options",
+          description:
+            "Reads default wallet and category templates from the database. Admin changes via /api/admin/onboarding/* are reflected here immediately.",
           security: [{ bearerAuth: [] }],
           responses: {
             200: {
