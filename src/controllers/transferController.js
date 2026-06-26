@@ -78,25 +78,49 @@ const normalizeTransferWallets = (transfer) => {
 
 const listTransfers = async (req, res) => {
   try {
+    const userId = req.user.userId;
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const skip = (page - 1) * limit;
 
-    const filter = { userId: req.user.userId };
+    const filter = { userId };
 
-    const [items, total] = await Promise.all([
-      WalletTransfer.find(filter)
-        .sort({ transferDate: -1, createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .populate("fromWalletId", "walletName currency")
-        .populate("toWalletId", "walletName currency")
-        .lean(),
-      WalletTransfer.countDocuments(filter),
-    ]);
+    const items = await WalletTransfer.find(filter)
+      .sort({ transferDate: -1, createdAt: -1 })
+      .populate("fromWalletId", "walletName currency")
+      .populate("toWalletId", "walletName currency")
+      .lean();
+
+    const linkedTransactionIds = items.flatMap((transfer) =>
+      [transfer.debitTransactionId, transfer.creditTransactionId].filter(Boolean),
+    );
+
+    const activeTransactionIds = new Set(
+      (
+        await WalletTransaction.find({
+          userId,
+          isDeleted: false,
+          _id: { $in: linkedTransactionIds },
+        })
+          .select("_id")
+          .lean()
+      ).map((transaction) => transaction._id.toString()),
+    );
+
+    const visibleTransfers = items.filter((transfer) => {
+      const debitId = transfer.debitTransactionId?.toString();
+      const creditId = transfer.creditTransactionId?.toString();
+      return (
+        (debitId && activeTransactionIds.has(debitId)) ||
+        (creditId && activeTransactionIds.has(creditId))
+      );
+    });
+
+    const total = visibleTransfers.length;
+    const paginatedTransfers = visibleTransfers.slice(skip, skip + limit);
 
     return successResponse(res, "Transfers fetched successfully", {
-      items: items.map(normalizeTransferWallets),
+      items: paginatedTransfers.map(normalizeTransferWallets),
       pagination: {
         page,
         limit,

@@ -462,6 +462,20 @@ const completeOnboarding = async (req, res) => {
 
     const userId = req.user.userId;
 
+    const existingUser = await User.findById(userId)
+      .select("onboardingCompleted")
+      .session(session);
+
+    if (!existingUser) {
+      await session.abortTransaction();
+      return errorResponse(res, "User not found", 404);
+    }
+
+    if (existingUser.onboardingCompleted) {
+      await session.abortTransaction();
+      return errorResponse(res, "Onboarding has already been completed", 403);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Validate Arrays

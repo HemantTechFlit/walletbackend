@@ -599,7 +599,12 @@ const options = {
           type: "object",
           properties: {
             walletId: { type: "string" },
-            categoryId: { type: "string" },
+            categoryId: {
+              type: "string",
+              nullable: true,
+              description:
+                "Optional. Omit to keep the current category. Pass null or an empty string to clear it.",
+            },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: {
               type: "number",
@@ -636,13 +641,23 @@ const options = {
               type: "boolean",
               description: "Set true to unlink the current receipt",
             },
+            updateReferenceTransaction: {
+              type: "boolean",
+              description:
+                "When true and this transaction is part of a wallet transfer, also updates the linked counterpart transaction using the original transfer conversion ratio.",
+            },
           },
         },
         UpdateTransactionMultipartRequest: {
           type: "object",
           properties: {
             walletId: { type: "string" },
-            categoryId: { type: "string" },
+            categoryId: {
+              type: "string",
+              nullable: true,
+              description:
+                "Optional. Omit to keep the current category. Pass null or an empty string to clear it.",
+            },
             type: { type: "string", enum: ["INCOME", "EXPENSE"] },
             amount: {
               type: "number",
@@ -685,6 +700,11 @@ const options = {
               format: "binary",
               description:
                 "Replacement receipt image or PDF file, max 15 MB. Requires Premium or Premium+ plan. Premium storage is capped at 300 MB total; Premium+ at 5 GB. Replaces the previous receipt and deletes it from storage.",
+            },
+            updateReferenceTransaction: {
+              type: "boolean",
+              description:
+                "When true and this transaction is part of a wallet transfer, also updates the linked counterpart transaction using the original transfer conversion ratio.",
             },
           },
         },
@@ -2084,6 +2104,7 @@ const options = {
             200: { description: "Onboarding completed" },
             400: { description: "Validation failed" },
             401: { description: "Unauthorized" },
+            403: { description: "Onboarding has already been completed" },
             500: { description: "Server error" },
           },
         },
@@ -2628,6 +2649,8 @@ const options = {
         delete: {
           tags: ["Transactions"],
           summary: "Soft-delete transaction",
+          description:
+            "Soft-deletes the transaction. When deleteReferenceTransaction is true and the transaction belongs to a wallet transfer, the linked counterpart transaction is also soft-deleted, the transfer record is removed, and wallet balances are recalculated from remaining active transactions only.",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -2636,9 +2659,20 @@ const options = {
               required: true,
               schema: { type: "string" },
             },
+            {
+              name: "deleteReferenceTransaction",
+              in: "query",
+              required: false,
+              schema: { type: "boolean" },
+              description:
+                "When true and this transaction is part of a wallet transfer, also soft-deletes the linked counterpart transaction.",
+            },
           ],
           responses: {
-            200: { description: "Transaction deleted" },
+            200: {
+              description:
+                "Transaction deleted. Returns affectedWallets with balances recalculated from active transactions only (deleted transactions are excluded and must not be adjusted again on the client).",
+            },
             401: { description: "Unauthorized" },
             403: { description: "Onboarding not completed" },
             404: { description: "Not found" },
@@ -2651,8 +2685,18 @@ const options = {
           tags: ["Planned Payments"],
           summary: "List active planned payments",
           description:
-            "Returns all active planned payment rules for the current user, newest first.",
+            "Returns active planned payment rules added by the user (one row per rule, not expanded recurring occurrences). When days is provided, also returns upcoming undecided occurrences within that window.",
           security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "days",
+              in: "query",
+              required: false,
+              schema: { type: "integer", minimum: 0 },
+              description:
+                "Optional. When set, includes upcoming occurrence entries due after today through today + days (today itself is excluded).",
+            },
+          ],
           responses: {
             200: { description: "Planned payments list with count" },
             401: { description: "Unauthorized" },
@@ -2776,7 +2820,7 @@ const options = {
           tags: ["Planned Payments"],
           summary: "Fetch upcoming and overdue planned payment occurrences",
           description:
-            "Returns undecided occurrences from today to today + days. For ALL/OVERDUE, overdue past occurrences are also included. Repeated planned payments expand into multiple rows that share the same plannedPaymentId. Each row has a composite _id of plannedPaymentId:occurrenceKey.",
+            "Returns undecided occurrences due after today through today + days (today itself is excluded from upcoming). For ALL/OVERDUE, overdue past occurrences are also included. Repeated planned payments expand into multiple rows that share the same plannedPaymentId. Each row has a composite _id of plannedPaymentId:occurrenceKey.",
           security: [{ bearerAuth: [] }],
           parameters: [
             {

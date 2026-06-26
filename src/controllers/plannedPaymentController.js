@@ -258,9 +258,35 @@ const createPlannedPayment = async (req, res) => {
   }
 };
 
+const formatPlannedPaymentRule = (plannedPayment) => {
+  const doc = plannedPayment.toObject
+    ? plannedPayment.toObject()
+    : { ...plannedPayment };
+
+  return {
+    _id: doc._id,
+    userId: doc.userId,
+    walletId: doc.walletId,
+    categoryId: doc.categoryId,
+    type: doc.type,
+    title: doc.title,
+    amount: doc.amount,
+    description: doc.description,
+    plannedType: doc.plannedType,
+    startDate: doc.startDate,
+    repeatInterval: doc.repeatInterval,
+    repeatUnit: doc.repeatUnit,
+    repeatUntilTimes: doc.repeatUntilTimes,
+    status: doc.status,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+};
+
 const listPlannedPayments = async (req, res) => {
   try {
     const userId = req.user.userId;
+    const daysParam = req.query.days;
 
     const items = await PlannedPayment.find({
       userId,
@@ -271,10 +297,28 @@ const listPlannedPayments = async (req, res) => {
       .populate("walletId", "walletName")
       .populate("categoryId", "name");
 
-    return successResponse(res, "Planned payments fetched successfully", {
-      items,
+    const response = {
+      items: items.map(formatPlannedPaymentRule),
       count: items.length,
-    });
+    };
+
+    if (daysParam !== undefined) {
+      const days = Number(daysParam);
+
+      if (!Number.isInteger(days) || days < 0) {
+        return errorResponse(res, "days must be a non-negative integer", 400);
+      }
+
+      const upcoming = await fetchPlannedPaymentOccurrences(userId, {
+        days,
+        occurrenceType: "UPCOMING",
+      });
+
+      response.upcoming = upcoming.items;
+      response.upcomingCount = upcoming.count;
+    }
+
+    return successResponse(res, "Planned payments fetched successfully", response);
   } catch (error) {
     return errorResponse(res, error.message);
   }

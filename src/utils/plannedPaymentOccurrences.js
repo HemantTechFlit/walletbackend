@@ -64,7 +64,7 @@ const generateOccurrences = (plannedPayment, today, rangeEnd, includeOverdue) =>
     if (!decision) {
       const occurrenceDate = startOfDay(current);
       const isOverdue = occurrenceDate < today;
-      const isUpcoming = occurrenceDate >= today && occurrenceDate <= rangeEnd;
+      const isUpcoming = occurrenceDate > today && occurrenceDate <= rangeEnd;
 
       if ((includeOverdue && isOverdue) || isUpcoming) {
         occurrences.push({

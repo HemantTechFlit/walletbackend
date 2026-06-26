@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const WalletTransaction = require("../models/WalletTransaction");
 const Wallet = require("../models/Wallet");
+const WalletTransfer = require("../models/WalletTransfer");
 const TransactionCategory = require("../models/TransactionCategory");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const {
@@ -12,8 +13,16 @@ const {
 } = require("../utils/receiptUpload");
 const {
   aggregateBalancesByWalletIds,
+  formatWalletBalancePayload,
 } = require("../utils/walletBalance");
 const { resolveTransactionAmount } = require("../utils/currencyConversion");
+const {
+  parseBooleanFlag,
+  findTransferForTransaction,
+  getTransferLegRole,
+  convertCounterpartAmount,
+  loadTransferLegs,
+} = require("../utils/transferTransactionSync");
 
 const parseDate = (value, endOfDay = false) => {
   if (!value) {
@@ -332,6 +341,7 @@ const updateTransaction = async (req, res) => {
       removeReceipt,
       amountCurrency,
       amountIn,
+      updateReferenceTransaction,
     } = req.body;
 
     if (!mongoose.isValidObjectId(id)) {
@@ -364,7 +374,12 @@ const updateTransaction = async (req, res) => {
       return errorResponse(res, "Valid walletId is required", 400);
     }
 
-    if (categoryId !== undefined && !mongoose.isValidObjectId(categoryId)) {
+    if (
+      categoryId !== undefined &&
+      categoryId !== null &&
+      categoryId !== "" &&
+      !mongoose.isValidObjectId(categoryId)
+    ) {
       return errorResponse(res, "Valid categoryId is required", 400);
     }
 
@@ -389,7 +404,14 @@ const updateTransaction = async (req, res) => {
     }
 
     const nextWalletId = walletId ?? transaction.walletId;
-    const nextCategoryId = categoryId ?? transaction.categoryId;
+    let nextCategoryId;
+    if (categoryId === undefined) {
+      nextCategoryId = transaction.categoryId;
+    } else if (categoryId === null || categoryId === "") {
+      nextCategoryId = null;
+    } else {
+      nextCategoryId = categoryId;
+    }
     const nextType = type ?? transaction.type;
     const nextAmountIn =
       amountIn !== undefined
@@ -505,16 +527,83 @@ const updateTransaction = async (req, res) => {
       transaction.receipt = receipt;
     }
 
-    transaction.categorySnapshot = {
-      name: category?.name,
-      color: category?.color,
-      icon: category?.icon,
-    };
+    transaction.categorySnapshot = category
+      ? {
+          name: category.name,
+          color: category.color,
+          icon: category.icon,
+        }
+      : null;
     transaction.walletSnapshot = {
       walletName: wallet.walletName,
       walletColor: wallet.color,
     };
     transaction.updatedAt = new Date();
+
+    const shouldUpdateReference = parseBooleanFlag(updateReferenceTransaction);
+
+    if (shouldUpdateReference) {
+      const transfer = await findTransferForTransaction(userId, transaction._id);
+
+      if (transfer) {
+        const role = getTransferLegRole(transfer, transaction._id);
+
+        if (role) {
+          const { debitTx, creditTx } = await loadTransferLegs(userId, transfer);
+          const counterpart = role === "debit" ? creditTx : debitTx;
+          const nextCounterpartAmount = convertCounterpartAmount(
+            transfer,
+            role,
+            nextAmount,
+          );
+          const nextTitle =
+            title !== undefined
+              ? typeof title === "string" && title.trim()
+                ? title.trim()
+                : null
+              : transaction.title;
+          const nextDescription =
+            description !== undefined
+              ? description ?? null
+              : transaction.description;
+          const nextDate = parsedTransactionDate ?? transaction.transactionDate;
+
+          counterpart.amount = nextCounterpartAmount;
+          counterpart.title = nextTitle;
+          counterpart.description = nextDescription;
+          counterpart.transactionDate = nextDate;
+          counterpart.updatedAt = new Date();
+
+          if (role === "debit") {
+            transfer.fromAmount = nextAmount;
+            transfer.toAmount = nextCounterpartAmount;
+            transfer.amount = nextAmount;
+          } else {
+            transfer.fromAmount = nextCounterpartAmount;
+            transfer.toAmount = nextAmount;
+            transfer.amount = nextCounterpartAmount;
+          }
+
+          transfer.title = nextTitle || transfer.title || "Wallet transfer";
+          transfer.description = nextDescription;
+          transfer.transferDate = nextDate;
+          transfer.updatedAt = new Date();
+
+          const counterpartWallet = await Wallet.findById(counterpart.walletId).select(
+            "walletName color",
+          );
+
+          if (counterpartWallet) {
+            counterpart.walletSnapshot = {
+              walletName: counterpartWallet.walletName,
+              walletColor: counterpartWallet.color,
+            };
+          }
+
+          await Promise.all([counterpart.save(), transfer.save()]);
+        }
+      }
+    }
 
     await transaction.save();
 
@@ -529,29 +618,114 @@ const updateTransaction = async (req, res) => {
 };
 
 const deleteTransaction = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
+    const userId = req.user.userId;
     const { id } = req.params;
+    const deleteReferenceTransaction =
+      req.body?.deleteReferenceTransaction ?? req.query?.deleteReferenceTransaction;
+
     if (!mongoose.isValidObjectId(id)) {
       return errorResponse(res, "Invalid id", 400);
     }
 
-    const tx = await WalletTransaction.findOneAndUpdate(
-      {
-        _id: id,
-        userId: req.user.userId,
-        isDeleted: false,
-      },
-      { $set: { isDeleted: true, updatedAt: new Date() } },
-      { new: true },
-    );
+    session.startTransaction();
+
+    const tx = await WalletTransaction.findOne({
+      _id: id,
+      userId,
+    }).session(session);
 
     if (!tx) {
+      await session.abortTransaction();
       return errorResponse(res, "Transaction not found", 404);
     }
 
-    return successResponse(res, "Transaction deleted successfully");
+    if (tx.isDeleted) {
+      const affectedWallets = await formatWalletBalancePayload(userId, [tx.walletId]);
+      await session.commitTransaction();
+      return successResponse(res, "Transaction deleted successfully", {
+        affectedWallets,
+      });
+    }
+
+    const shouldDeleteReference = parseBooleanFlag(deleteReferenceTransaction);
+    const now = new Date();
+    const idsToDelete = [tx._id];
+    let transferToRemove = null;
+
+    if (shouldDeleteReference) {
+      transferToRemove = await findTransferForTransaction(userId, tx._id, session);
+
+      if (transferToRemove) {
+        const role = getTransferLegRole(transferToRemove, tx._id);
+
+        if (role) {
+          const counterpartId =
+            role === "debit"
+              ? transferToRemove.creditTransactionId
+              : transferToRemove.debitTransactionId;
+
+          if (counterpartId) {
+            idsToDelete.push(counterpartId);
+          }
+        }
+      }
+    }
+
+    const transactionsToDelete = await WalletTransaction.find({
+      _id: { $in: idsToDelete },
+      userId,
+      isDeleted: false,
+    })
+      .select("walletId")
+      .session(session);
+
+    const affectedWalletIds = transactionsToDelete
+      .map((item) => item.walletId)
+      .filter(Boolean);
+
+    await deleteReceiptAttachmentsForTransactions({
+      userId,
+      transactionIds: idsToDelete,
+      session,
+    });
+
+    await WalletTransaction.updateMany(
+      {
+        _id: { $in: idsToDelete },
+        userId,
+        isDeleted: false,
+      },
+      { $set: { isDeleted: true, updatedAt: now } },
+      { session },
+    );
+
+    if (transferToRemove) {
+      await WalletTransfer.deleteOne(
+        { _id: transferToRemove._id, userId },
+        { session },
+      );
+    }
+
+    await session.commitTransaction();
+
+    const affectedWallets = await formatWalletBalancePayload(
+      userId,
+      affectedWalletIds,
+    );
+
+    return successResponse(res, "Transaction deleted successfully", {
+      affectedWallets,
+    });
   } catch (error) {
-    return errorResponse(res, error.message);
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    return errorResponse(res, error.message, error.statusCode || 500);
+  } finally {
+    session.endSession();
   }
 };
 
