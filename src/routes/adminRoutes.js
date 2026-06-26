@@ -28,6 +28,20 @@ const {
   updateCurrency,
   deleteCurrency,
 } = require("../controllers/adminCurrencyController");
+const {
+  listLegalDocuments,
+  updateLegalDocument,
+} = require("../controllers/adminLegalController");
+const {
+  listUsers,
+  getUser,
+  updateUserStatus,
+} = require("../controllers/adminUserController");
+const {
+  listSupportSubmissions,
+  getSupportSubmission,
+  updateSupportSubmission,
+} = require("../controllers/adminSupportController");
 
 router.post("/login", login);
 router.post("/refresh-token", refreshToken);
@@ -55,5 +69,20 @@ router.get("/currencies", adminAuthMiddleware, listCurrencies);
 router.post("/currencies", adminAuthMiddleware, createCurrency);
 router.put("/currencies/:id", adminAuthMiddleware, updateCurrency);
 router.delete("/currencies/:id", adminAuthMiddleware, deleteCurrency);
+
+router.get("/legal-documents", adminAuthMiddleware, listLegalDocuments);
+router.put("/legal-documents/:type", adminAuthMiddleware, updateLegalDocument);
+
+router.get("/users", adminAuthMiddleware, listUsers);
+router.get("/users/:id", adminAuthMiddleware, getUser);
+router.patch("/users/:id/status", adminAuthMiddleware, updateUserStatus);
+
+router.get("/support-submissions", adminAuthMiddleware, listSupportSubmissions);
+router.get("/support-submissions/:id", adminAuthMiddleware, getSupportSubmission);
+router.patch(
+  "/support-submissions/:id",
+  adminAuthMiddleware,
+  updateSupportSubmission,
+);
 
 module.exports = router;

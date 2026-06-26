@@ -2041,6 +2041,205 @@ const options = {
           },
         },
       },
+      "/api/admin/legal-documents": {
+        get: {
+          tags: ["Admin"],
+          summary: "List legal documents",
+          security: [{ adminBearerAuth: [] }],
+          responses: {
+            200: { description: "Legal documents fetched" },
+            401: { description: "Unauthorized" },
+          },
+        },
+      },
+      "/api/admin/legal-documents/{type}": {
+        put: {
+          tags: ["Admin"],
+          summary: "Update legal document HTML content",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "type",
+              in: "path",
+              required: true,
+              schema: {
+                type: "string",
+                enum: ["TERMS_AND_CONDITIONS", "PRIVACY_POLICY"],
+              },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["contentHtml"],
+                  properties: {
+                    contentHtml: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Legal document updated" },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized" },
+          },
+        },
+      },
+      "/api/admin/users": {
+        get: {
+          tags: ["Admin"],
+          summary: "List users with filters",
+          security: [{ adminBearerAuth: [] }],
+          responses: {
+            200: { description: "Users fetched" },
+            401: { description: "Unauthorized" },
+          },
+        },
+      },
+      "/api/admin/users/{id}": {
+        get: {
+          tags: ["Admin"],
+          summary: "Get user details",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            200: { description: "User fetched" },
+            404: { description: "User not found" },
+          },
+        },
+      },
+      "/api/admin/users/{id}/status": {
+        patch: {
+          tags: ["Admin"],
+          summary: "Activate or deactivate user",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["status"],
+                  properties: {
+                    status: {
+                      type: "string",
+                      enum: ["ACTIVE", "DEACTIVATED"],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "User status updated" },
+            400: { description: "Validation failed" },
+            404: { description: "User not found" },
+          },
+        },
+      },
+      "/api/admin/support-submissions": {
+        get: {
+          tags: ["Admin"],
+          summary: "List support submissions",
+          security: [{ adminBearerAuth: [] }],
+          responses: {
+            200: { description: "Support submissions fetched" },
+            401: { description: "Unauthorized" },
+          },
+        },
+      },
+      "/api/admin/support-submissions/{id}": {
+        get: {
+          tags: ["Admin"],
+          summary: "Get support submission details",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            200: { description: "Support submission fetched" },
+            404: { description: "Not found" },
+          },
+        },
+        patch: {
+          tags: ["Admin"],
+          summary: "Update support submission status",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    status: {
+                      type: "string",
+                      enum: ["OPEN", "CLOSED"],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Support submission updated" },
+            404: { description: "Not found" },
+          },
+        },
+      },
+      "/api/legal/{type}": {
+        get: {
+          tags: ["App Settings"],
+          summary: "Get public legal document HTML",
+          parameters: [
+            {
+              name: "type",
+              in: "path",
+              required: true,
+              schema: {
+                type: "string",
+                enum: ["TERMS_AND_CONDITIONS", "PRIVACY_POLICY"],
+              },
+            },
+          ],
+          responses: {
+            200: { description: "Legal document fetched" },
+            400: { description: "Invalid type" },
+          },
+        },
+      },
       "/api/auth/onboarding-options": {
         get: {
           tags: ["Onboarding"],

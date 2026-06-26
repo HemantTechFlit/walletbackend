@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 const { ensureCurrenciesSeeded } = require("../config/currencySeed");
 const { ensureDefaultAdminSeeded } = require("../config/adminSeed");
 const { ensureOnboardingTemplatesSeeded } = require("../config/onboardingSeed");
+const { ensureLegalDocumentsSeeded } = require("../config/legalSeed");
+const User = require("../models/User");
 const { refreshExchangeRates } = require("../services/exchangeRateService");
 
 const connectDB = async () => {
@@ -34,6 +36,11 @@ const connectDB = async () => {
     await ensureCurrenciesSeeded();
     await ensureDefaultAdminSeeded();
     await ensureOnboardingTemplatesSeeded();
+    await ensureLegalDocumentsSeeded();
+    await User.updateMany(
+      { status: "BLOCKED" },
+      { $set: { status: "DEACTIVATED" } },
+    );
     try {
       await refreshExchangeRates({ force: false });
     } catch (error) {

@@ -14,7 +14,10 @@ const {
 } = require("../utils/generateTokens");
 
 const { successResponse, errorResponse } = require("../utils/responseHandler");
-const { seedPlansIfEmpty, assignBasicPlanToUser } = require("../utils/planLimits");
+const {
+  seedPlansIfEmpty,
+  assignBasicPlanToUser,
+} = require("../utils/planLimits");
 const sendEmail = require("../utils/sendEmail");
 const { verifyProviderIdToken } = require("../utils/socialAuth");
 const { assertActiveCurrency } = require("../services/exchangeRateService");
@@ -25,6 +28,9 @@ const {
   formatWalletOption,
   groupCategoriesByType,
 } = require("../services/onboardingTemplateService");
+
+const ACCOUNT_DEACTIVATED_MESSAGE =
+  "Your account is deactivated. Please contact with the admin";
 
 const normalizeOnboardingSelections = (items) => {
   return items.reduce(
@@ -68,7 +74,10 @@ const buildTemplateSelectionQuery = ({ objectIds, slugs }) => {
   };
 };
 
-const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+const normalizeEmail = (email) =>
+  String(email || "")
+    .trim()
+    .toLowerCase();
 
 const createAuthSession = async ({ user, req }) => {
   user.lastLoginAt = new Date();
@@ -107,7 +116,9 @@ const getSocialProviderInput = (provider, body) => {
     typeof body.fullName === "string" && body.fullName.trim()
       ? body.fullName.trim()
       : null;
-  const currency = String(body.currency || "AUD").trim().toUpperCase();
+  const currency = String(body.currency || "AUD")
+    .trim()
+    .toUpperCase();
 
   return {
     provider: normalizedProvider,
@@ -133,11 +144,13 @@ const upsertSocialUser = async ({ provider, claims, fullName, currency }) => {
   let user = await User.findOne(providerFilter).select("+passwordHash");
 
   if (!user && email) {
-    user = await User.findOne({ email, isDeleted: false }).select("+passwordHash");
+    user = await User.findOne({ email, isDeleted: false }).select(
+      "+passwordHash",
+    );
   }
 
   if (user && user.status !== "ACTIVE") {
-    const error = new Error("User is not active");
+    const error = new Error(ACCOUNT_DEACTIVATED_MESSAGE);
     error.statusCode = 403;
     throw error;
   }
@@ -156,7 +169,9 @@ const upsertSocialUser = async ({ provider, claims, fullName, currency }) => {
     );
 
     user.authProviders = [
-      ...(user.authProviders || []).filter((entry) => entry.provider !== provider),
+      ...(user.authProviders || []).filter(
+        (entry) => entry.provider !== provider,
+      ),
       existingProviderEntry || providerEntry,
     ];
 
@@ -164,7 +179,9 @@ const upsertSocialUser = async ({ provider, claims, fullName, currency }) => {
   }
 
   if (!email) {
-    const error = new Error("Email is required from social provider for first login");
+    const error = new Error(
+      "Email is required from social provider for first login",
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -340,7 +357,9 @@ const signup = async (req, res) => {
 const verifyOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
-    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
 
     const existingOTP = await OTP.findOne({
       email: normalizedEmail,
@@ -395,11 +414,14 @@ const login = async (req, res) => {
     const user = await User.findOne({
       email,
       isDeleted: false,
-      status: "ACTIVE",
     }).select("+passwordHash");
 
     if (!user) {
       return errorResponse(res, "Email not registered", 400);
+    }
+
+    if (user.status !== "ACTIVE") {
+      return errorResponse(res, ACCOUNT_DEACTIVATED_MESSAGE, 403);
     }
 
     if (!user.passwordHash) {
@@ -508,7 +530,8 @@ const completeOnboarding = async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    const selectedWalletFilters = normalizeOnboardingSelections(selectedWallets);
+    const selectedWalletFilters =
+      normalizeOnboardingSelections(selectedWallets);
     const walletTemplates = await Wallet.find(
       buildTemplateSelectionQuery(selectedWalletFilters),
     ).session(session);
@@ -714,7 +737,9 @@ const getOnboardingOptions = async (req, res) => {
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
 
     /*
     |--------------------------------------------------------------------------
@@ -801,7 +826,9 @@ const forgotPassword = async (req, res) => {
 const resetPassword = async (req, res) => {
   try {
     const { email, newPassword, confirmNewPassword } = req.body;
-    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
 
     if (!normalizedEmail) {
       return errorResponse(res, "email is required", 400);

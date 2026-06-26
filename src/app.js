@@ -22,6 +22,7 @@ const appSettingsRoutes = require("./routes/appSettingsRoutes");
 const currencyRoutes = require("./routes/currencyRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const legalRoutes = require("./routes/legalRoutes");
 const { startReceiptPurgeCron } = require("./jobs/receiptPurgeCron");
 const { startExchangeRateCron } = require("./jobs/exchangeRateCron");
 
@@ -53,6 +54,7 @@ app.use("/api/app-settings", appSettingsRoutes);
 app.use("/api/currencies", currencyRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/legal", legalRoutes);
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get("/api/docs.json", (req, res) => {
   res.setHeader("Content-Type", "application/json");
