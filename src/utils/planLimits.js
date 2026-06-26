@@ -3,6 +3,10 @@ const Plan = require("../models/Plan");
 const Wallet = require("../models/Wallet");
 const Report = require("../models/Report");
 const Subscription = require("../models/Subscription");
+const {
+  normalizePlanFeatures,
+  toPlanFeatureSeed,
+} = require("./planFeatures");
 
 const BASIC_PLAN_NAME = "Basic";
 const YEARLY_PREMIUM_PLAN_NAME = "Yearly Premium";
@@ -97,10 +101,10 @@ const DEFAULT_PLANS = [
     monthlyReportLimit: 1,
     cloudStorageLimitMB: 0,
     features: [
-      "Ads enabled",
-      "Unlimited Wallets",
-      "No Receipt Upload",
-      "1 Report a month",
+      toPlanFeatureSeed("Ads enabled"),
+      toPlanFeatureSeed("Unlimited Wallets"),
+      toPlanFeatureSeed("No Receipt Upload"),
+      toPlanFeatureSeed("1 Report a month"),
     ],
     isActive: true,
   },
@@ -114,11 +118,11 @@ const DEFAULT_PLANS = [
     monthlyReportLimit: 5,
     cloudStorageLimitMB: 300,
     features: [
-      "No ADS",
-      "Unlimited Wallets",
-      "Receipt Upload",
-      "300 MB Receipt Storage",
-      "5 Reports a month",
+      toPlanFeatureSeed("No ADS"),
+      toPlanFeatureSeed("Unlimited Wallets"),
+      toPlanFeatureSeed("Receipt Upload"),
+      toPlanFeatureSeed("300 MB Receipt Storage"),
+      toPlanFeatureSeed("5 Reports a month"),
     ],
     isActive: true,
   },
@@ -132,11 +136,11 @@ const DEFAULT_PLANS = [
     monthlyReportLimit: UNLIMITED_REPORTS,
     cloudStorageLimitMB: 5120,
     features: [
-      "No ADS",
-      "Unlimited Wallets",
-      "Receipt Upload",
-      "5 GB Receipt Storage",
-      "Unlimited Reports",
+      toPlanFeatureSeed("No ADS"),
+      toPlanFeatureSeed("Unlimited Wallets"),
+      toPlanFeatureSeed("Receipt Upload"),
+      toPlanFeatureSeed("5 GB Receipt Storage"),
+      toPlanFeatureSeed("Unlimited Reports"),
     ],
     isActive: true,
   },
@@ -150,12 +154,12 @@ const DEFAULT_PLANS = [
     monthlyReportLimit: 5,
     cloudStorageLimitMB: 300,
     features: [
-      "No ADS",
-      "Unlimited Wallets",
-      "Receipt Upload",
-      "300 MB Receipt Storage",
-      "5 Reports a month",
-      "Billed yearly",
+      toPlanFeatureSeed("No ADS"),
+      toPlanFeatureSeed("Unlimited Wallets"),
+      toPlanFeatureSeed("Receipt Upload"),
+      toPlanFeatureSeed("300 MB Receipt Storage"),
+      toPlanFeatureSeed("5 Reports a month"),
+      toPlanFeatureSeed("Billed yearly"),
     ],
     isActive: true,
   },
@@ -169,12 +173,12 @@ const DEFAULT_PLANS = [
     monthlyReportLimit: UNLIMITED_REPORTS,
     cloudStorageLimitMB: 5120,
     features: [
-      "No ADS",
-      "Unlimited Wallets",
-      "Receipt Upload",
-      "5 GB Receipt Storage",
-      "Unlimited Reports",
-      "Billed yearly",
+      toPlanFeatureSeed("No ADS"),
+      toPlanFeatureSeed("Unlimited Wallets"),
+      toPlanFeatureSeed("Receipt Upload"),
+      toPlanFeatureSeed("5 GB Receipt Storage"),
+      toPlanFeatureSeed("Unlimited Reports"),
+      toPlanFeatureSeed("Billed yearly"),
     ],
     isActive: true,
   },
@@ -186,18 +190,30 @@ const seedPlansIfEmpty = async () => {
   for (const planData of DEFAULT_PLANS) {
     const stripePriceId = getStripePriceIdForPlan(planData.name);
     const stripeProductId = getStripeProductIdForPlan(planData.name);
+    const existing = await Plan.findOne({ name: planData.name }).select("_id");
 
-    await Plan.findOneAndUpdate(
-      { name: planData.name },
-      {
-        $set: {
-          ...planData,
-          ...(stripePriceId ? { stripePriceId } : {}),
-          ...(stripeProductId ? { stripeProductId } : {}),
-        },
-      },
-      { upsert: true },
-    );
+    if (!existing) {
+      await Plan.create({
+        ...planData,
+        ...(stripePriceId ? { stripePriceId } : {}),
+        ...(stripeProductId ? { stripeProductId } : {}),
+      });
+      continue;
+    }
+
+    const stripeUpdates = {};
+
+    if (stripePriceId) {
+      stripeUpdates.stripePriceId = stripePriceId;
+    }
+
+    if (stripeProductId) {
+      stripeUpdates.stripeProductId = stripeProductId;
+    }
+
+    if (Object.keys(stripeUpdates).length > 0) {
+      await Plan.updateOne({ _id: existing._id }, { $set: stripeUpdates });
+    }
   }
 
   await Plan.updateMany(
@@ -409,12 +425,27 @@ const buildPlansCatalogForUser = async (userId = null) => {
   );
   const plans = allPlans.map((item) => ({
     ...item,
+    features: normalizePlanFeatures(item.features),
     selected: selectedPlanId ? item._id.toString() === selectedPlanId : false,
   }));
 
   let pendingPlan = null;
   if (subscription?.pendingPlanId) {
     pendingPlan = await Plan.findById(subscription.pendingPlanId).lean();
+  }
+
+  if (plan) {
+    plan = {
+      ...plan,
+      features: normalizePlanFeatures(plan.features),
+    };
+  }
+
+  if (pendingPlan) {
+    pendingPlan = {
+      ...pendingPlan,
+      features: normalizePlanFeatures(pendingPlan.features),
+    };
   }
 
   return {

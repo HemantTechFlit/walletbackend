@@ -18,6 +18,16 @@ const {
   updateOnboardingCategory,
   deleteOnboardingCategory,
 } = require("../controllers/adminOnboardingController");
+const {
+  listPlans,
+  updatePlan,
+} = require("../controllers/adminPlanController");
+const {
+  listCurrencies,
+  createCurrency,
+  updateCurrency,
+  deleteCurrency,
+} = require("../controllers/adminCurrencyController");
 
 router.post("/login", login);
 router.post("/refresh-token", refreshToken);
@@ -37,5 +47,13 @@ router.delete(
   adminAuthMiddleware,
   deleteOnboardingCategory,
 );
+
+router.get("/plans", adminAuthMiddleware, listPlans);
+router.put("/plans/:id", adminAuthMiddleware, updatePlan);
+
+router.get("/currencies", adminAuthMiddleware, listCurrencies);
+router.post("/currencies", adminAuthMiddleware, createCurrency);
+router.put("/currencies/:id", adminAuthMiddleware, updateCurrency);
+router.delete("/currencies/:id", adminAuthMiddleware, deleteCurrency);
 
 module.exports = router;

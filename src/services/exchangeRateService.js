@@ -102,11 +102,34 @@ const filterRatesForSupportedCurrencies = (rates, supportedCodes) => {
   return filtered;
 };
 
+const getMissingActiveCurrencyCodes = async (snapshot) => {
+  if (!snapshot) {
+    return [];
+  }
+
+  const activeCurrencies = await Currency.find({ isActive: true })
+    .select("code")
+    .lean();
+  const rates = ratesMapToObject(snapshot.rates);
+  const base = (snapshot.baseCurrency || BASE_CURRENCY).toUpperCase();
+
+  return activeCurrencies
+    .map((currency) => currency.code.toUpperCase())
+    .filter(
+      (code) =>
+        code !== base &&
+        (typeof rates[code] !== "number" || rates[code] <= 0),
+    );
+};
+
 const refreshExchangeRates = async ({ force = false } = {}) => {
   const latest = await ExchangeRate.findOne().sort({ fetchedAt: -1 }).lean();
+  const missingCodes = await getMissingActiveCurrencyCodes(latest);
+  const hasMissingCurrencies = missingCodes.length > 0;
 
   if (
     !force &&
+    !hasMissingCurrencies &&
     latest?.fetchedAt &&
     Date.now() - new Date(latest.fetchedAt).getTime() < MS_PER_DAY
   ) {
@@ -156,7 +179,12 @@ const refreshExchangeRates = async ({ force = false } = {}) => {
 };
 
 const getLatestExchangeRates = async () => {
-  const snapshot = await ExchangeRate.findOne().sort({ fetchedAt: -1 }).lean();
+  let snapshot = await ExchangeRate.findOne().sort({ fetchedAt: -1 }).lean();
+
+  const missingCodes = await getMissingActiveCurrencyCodes(snapshot);
+  if (missingCodes.length > 0) {
+    snapshot = await refreshExchangeRates({ force: true });
+  }
 
   if (!snapshot) {
     const err = new Error("Exchange rates are not available yet");

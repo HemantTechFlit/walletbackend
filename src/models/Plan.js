@@ -54,7 +54,13 @@ const planSchema = new mongoose.Schema(
       index: true,
     },
 
-    features: [String],
+    features: [
+      {
+        title: { type: String, required: true, trim: true },
+        icon: { type: String, default: "", trim: true },
+        description: { type: String, default: "", trim: true },
+      },
+    ],
 
     isActive: {
       type: Boolean,

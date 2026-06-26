@@ -10,22 +10,22 @@ const options = {
         "Expense / income tracker backend: authentication, admin panel auth, onboarding, users, wallets, categories, transactions, transfers, reports, and subscriptions.",
     },
     servers: [
-      // {
-      //   url: "http://69.62.81.206:3001",
-      //   description: "DriveLedger Developmenr Server",
-      // },
-
       {
-        url: "http://localhost:3000",
-        description: "Local development server",
+        url: "https://expense-tracker-ip37.onrender.com",
+        description: "Expense Tracker API production server",
       },
+
+      // {
+      //   url: "http://localhost:3000",
+      //   description: "Local development server",
+      // },
     ],
     tags: [
       { name: "Auth", description: "Authentication APIs" },
       {
         name: "Admin",
         description:
-          "Admin panel authentication and onboarding template management (default admin seeded from ADMIN_USERNAME / ADMIN_PASSWORD on server start)",
+          "Admin panel authentication and management of onboarding templates, subscription plans, and supported currencies (default admin seeded from ADMIN_USERNAME / ADMIN_PASSWORD on server start)",
       },
       { name: "Onboarding", description: "Onboarding APIs" },
       { name: "Users", description: "Current user profile and preferences" },
@@ -1151,6 +1151,137 @@ const options = {
             },
           },
         },
+        PlanFeature: {
+          type: "object",
+          required: ["title"],
+          properties: {
+            title: { type: "string", example: "Unlimited Wallets" },
+            icon: { type: "string", example: "wallet", default: "" },
+            description: {
+              type: "string",
+              example: "Create as many wallets as you need.",
+              default: "",
+            },
+          },
+        },
+        AdminPlan: {
+          type: "object",
+          properties: {
+            id: { type: "string", example: "6820752aebf84d7a6394c170" },
+            name: { type: "string", example: "Premium" },
+            price: { type: "number", example: 3 },
+            currency: { type: "string", example: "AUD" },
+            billingType: {
+              type: "string",
+              enum: ["MONTHLY", "YEARLY", "LIFETIME"],
+              example: "MONTHLY",
+            },
+            maxWallets: {
+              type: "number",
+              example: 999999,
+              description: "Use 999999 for unlimited wallets.",
+            },
+            adsEnabled: { type: "boolean", example: false },
+            monthlyReportLimit: {
+              type: "number",
+              example: 5,
+              description: "Use 999999 for unlimited monthly reports.",
+            },
+            cloudStorageLimitMB: { type: "number", example: 300 },
+            stripeProductId: {
+              type: "string",
+              nullable: true,
+              example: "prod_xxx",
+            },
+            stripePriceId: {
+              type: "string",
+              nullable: true,
+              example: "price_xxx",
+            },
+            features: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PlanFeature" },
+            },
+            isActive: { type: "boolean", example: true },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+              example: "2026-01-15T10:00:00.000Z",
+            },
+          },
+        },
+        UpdateAdminPlanRequest: {
+          type: "object",
+          required: ["features"],
+          properties: {
+            features: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PlanFeature" },
+            },
+          },
+        },
+        AdminCurrency: {
+          type: "object",
+          properties: {
+            id: { type: "string", example: "6820752aebf84d7a6394c171" },
+            code: { type: "string", example: "USD" },
+            name: { type: "string", example: "US Dollar" },
+            symbol: { type: "string", example: "$" },
+            decimalPlaces: { type: "integer", example: 2 },
+            sortOrder: { type: "integer", example: 1 },
+            isActive: { type: "boolean", example: true },
+          },
+        },
+        CreateAdminCurrencyRequest: {
+          type: "object",
+          required: ["code", "name"],
+          properties: {
+            code: {
+              type: "string",
+              minLength: 3,
+              maxLength: 3,
+              example: "USD",
+            },
+            name: { type: "string", example: "US Dollar" },
+            symbol: { type: "string", example: "$", default: "" },
+            decimalPlaces: {
+              type: "integer",
+              minimum: 0,
+              maximum: 4,
+              example: 2,
+              default: 2,
+            },
+            sortOrder: {
+              type: "integer",
+              example: 1,
+              description:
+                "Optional. Auto-assigned to max sortOrder + 1 when omitted.",
+            },
+            isActive: { type: "boolean", example: true, default: true },
+          },
+        },
+        UpdateAdminCurrencyRequest: {
+          type: "object",
+          required: ["name"],
+          properties: {
+            code: {
+              type: "string",
+              minLength: 3,
+              maxLength: 3,
+              example: "USD",
+            },
+            name: { type: "string", example: "US Dollar" },
+            symbol: { type: "string", example: "$" },
+            decimalPlaces: {
+              type: "integer",
+              minimum: 0,
+              maximum: 4,
+              example: 2,
+            },
+            sortOrder: { type: "integer", example: 1 },
+            isActive: { type: "boolean", example: true },
+          },
+        },
       },
     },
     paths: {
@@ -1641,6 +1772,251 @@ const options = {
             200: { description: "Onboarding category deleted" },
             401: { description: "Unauthorized or invalid admin token" },
             404: { description: "Onboarding category not found" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/plans": {
+        get: {
+          tags: ["Admin"],
+          summary: "List active subscription plans",
+          description:
+            "Returns active subscription plans managed in the admin panel. Plans are seeded on server start; only updates are allowed via PUT /api/admin/plans/{id}.",
+          security: [{ adminBearerAuth: [] }],
+          responses: {
+            200: {
+              description: "Plans fetched",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: {
+                            type: "object",
+                            properties: {
+                              plans: {
+                                type: "array",
+                                items: {
+                                  $ref: "#/components/schemas/AdminPlan",
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            401: { description: "Unauthorized or invalid admin token" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/plans/{id}": {
+        put: {
+          tags: ["Admin"],
+          summary: "Update subscription plan features",
+          description:
+            "Updates only the plan feature list. Pricing, limits, billing type, and Stripe IDs cannot be changed via the admin API.",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UpdateAdminPlanRequest" },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: "Plan features updated",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: { $ref: "#/components/schemas/AdminPlan" },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized or invalid admin token" },
+            404: { description: "Plan not found" },
+            409: { description: "A plan with this name already exists" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/currencies": {
+        get: {
+          tags: ["Admin"],
+          summary: "List active supported currencies",
+          description:
+            "Returns active currencies managed in the admin panel. Currencies are seeded on server start; admin changes via this API are reflected in GET /api/currencies.",
+          security: [{ adminBearerAuth: [] }],
+          responses: {
+            200: {
+              description: "Currencies fetched",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: {
+                            type: "object",
+                            properties: {
+                              currencies: {
+                                type: "array",
+                                items: {
+                                  $ref: "#/components/schemas/AdminCurrency",
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            401: { description: "Unauthorized or invalid admin token" },
+            500: { description: "Server error" },
+          },
+        },
+        post: {
+          tags: ["Admin"],
+          summary: "Create supported currency",
+          description: "Creates a new currency.",
+          security: [{ adminBearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/CreateAdminCurrencyRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            201: {
+              description: "Currency created",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: { $ref: "#/components/schemas/AdminCurrency" },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized or invalid admin token" },
+            409: { description: "A currency with this code already exists" },
+            500: { description: "Server error" },
+          },
+        },
+      },
+      "/api/admin/currencies/{id}": {
+        put: {
+          tags: ["Admin"],
+          summary: "Update supported currency",
+          description:
+            "Updates currency metadata, including the ISO 4217 code when changed.",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/UpdateAdminCurrencyRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: "Currency updated",
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/SuccessResponse" },
+                      {
+                        type: "object",
+                        properties: {
+                          data: { $ref: "#/components/schemas/AdminCurrency" },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            400: { description: "Validation failed" },
+            401: { description: "Unauthorized or invalid admin token" },
+            404: { description: "Currency not found" },
+            500: { description: "Server error" },
+          },
+        },
+        delete: {
+          tags: ["Admin"],
+          summary: "Deactivate supported currency",
+          description:
+            "Soft-deletes a currency by setting isActive to false. Wallets already using this currency are not affected.",
+          security: [{ adminBearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            200: { description: "Currency deleted" },
+            400: { description: "Invalid currency id" },
+            401: { description: "Unauthorized or invalid admin token" },
+            404: { description: "Currency not found" },
             500: { description: "Server error" },
           },
         },
@@ -2795,7 +3171,7 @@ const options = {
           tags: ["Subscriptions"],
           summary: "Get plans and current subscription",
           description:
-            "Returns all 5 plans (Basic, Premium, Premium+, Yearly Premium, Yearly Premium+) with price, billingType, features, Stripe price/product ids, selected flag, the user's effective plan, and pending downgrade/cancellation plan. All plans allow unlimited wallets.",
+            "Returns active subscription plans with price, billingType, features, Stripe price/product ids, selected flag, the user's effective plan, and pending downgrade/cancellation plan. Plans are seeded on server start when empty; admin changes via /api/admin/plans/* are reflected here immediately.",
           security: [{ bearerAuth: [] }],
           responses: {
             200: {
@@ -3159,7 +3535,7 @@ const options = {
           tags: ["Currencies"],
           summary: "List supported currencies with latest exchange rates",
           description:
-            "Public endpoint. Returns up to 50 supported currencies and their latest rates relative to the base currency. No authentication required.",
+            "Public endpoint. Returns active supported currencies and their latest rates relative to the base currency. No authentication required. Admin changes via /api/admin/currencies/* are reflected here immediately.",
           responses: {
             200: { description: "Currency list with rates" },
             500: { description: "Server error" },

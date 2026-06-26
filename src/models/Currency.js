@@ -1,7 +1,5 @@
 const mongoose = require("mongoose");
 
-const MAX_SUPPORTED_CURRENCIES = 50;
-
 const currencySchema = new mongoose.Schema(
   {
     code: {
@@ -52,4 +50,3 @@ const currencySchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("Currency", currencySchema);
-module.exports.MAX_SUPPORTED_CURRENCIES = MAX_SUPPORTED_CURRENCIES;

@@ -66,12 +66,38 @@ app.get("/", (req, res) => {
     message: "Expense Tracker API Running",
   });
 });
+
+app.use((req, res) => {
+  return res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
+});
+
 app.use((err, req, res, next) => {
   console.log(err);
 
-  return res.status(500).json({
+  if (err.type === "entity.parse.failed") {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid JSON in request body",
+    });
+  }
+
+  if (err.type === "entity.too.large") {
+    return res.status(413).json({
+      success: false,
+      message: "Request body is too large",
+    });
+  }
+
+  const statusCode = Number(err.statusCode || err.status) || 500;
+  const message =
+    statusCode >= 500 ? "Internal Server Error" : err.message || "Request failed";
+
+  return res.status(statusCode).json({
     success: false,
-    message: "Internal Server Error",
+    message,
   });
 });
 

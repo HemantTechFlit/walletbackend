@@ -1,7 +1,5 @@
 const Currency = require("../models/Currency");
 
-const MAX_SUPPORTED_CURRENCIES = Currency.MAX_SUPPORTED_CURRENCIES;
-
 const SUPPORTED_CURRENCIES = [
   { code: "USD", name: "US Dollar", symbol: "$", sortOrder: 1 },
   { code: "EUR", name: "Euro", symbol: "€", sortOrder: 2 },
@@ -55,12 +53,6 @@ const SUPPORTED_CURRENCIES = [
   { code: "LKR", name: "Sri Lankan Rupee", symbol: "Rs", sortOrder: 50 },
 ];
 
-if (SUPPORTED_CURRENCIES.length > MAX_SUPPORTED_CURRENCIES) {
-  throw new Error(
-    `Currency seed exceeds max supported currencies (${MAX_SUPPORTED_CURRENCIES})`,
-  );
-}
-
 const ensureCurrenciesSeeded = async () => {
   const existingCount = await Currency.countDocuments();
 
@@ -87,12 +79,6 @@ const ensureCurrenciesSeeded = async () => {
   );
 
   const total = await Currency.countDocuments();
-  if (total > MAX_SUPPORTED_CURRENCIES) {
-    throw new Error(
-      `Currency table exceeds max supported currencies (${MAX_SUPPORTED_CURRENCIES})`,
-    );
-  }
-
   console.log(`✅ Currencies seeded (${total} total)`);
 };
 
