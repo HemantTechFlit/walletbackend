@@ -203,18 +203,48 @@ const options = {
           properties: {
             selectedWallets: {
               type: "array",
-              description: "Mongo _id values or onboarding ids like doordash",
-              items: { type: "string", example: "doordash" },
+              description:
+                "Onboarding wallet templates (Mongo _id or slug like doordash) and/or custom wallets using the same fields as POST /api/wallets.",
+              items: {
+                oneOf: [
+                  { type: "string", example: "doordash" },
+                  { $ref: "#/components/schemas/CreateWalletRequest" },
+                ],
+              },
+              example: [
+                "doordash",
+                {
+                  walletName: "Cash Wallet",
+                  color: "0xff06c167",
+                  icon: "CustomIcons.wallet",
+                  balance: 5000,
+                },
+              ],
             },
             selectedCategories: {
               type: "array",
-              description: "Mongo _id values or onboarding ids like fuel",
-              items: { type: "string", example: "fuel" },
+              description:
+                "Onboarding category templates (Mongo _id or slug like fuel) and/or custom categories using the same fields as POST /api/categories.",
+              items: {
+                oneOf: [
+                  { type: "string", example: "fuel" },
+                  { $ref: "#/components/schemas/CreateCategoryRequest" },
+                ],
+              },
+              example: [
+                "fuel",
+                {
+                  name: "Groceries",
+                  color: "0xff4549ff",
+                  icon: "CustomIcons.catFood",
+                  type: "EXPENSE",
+                },
+              ],
             },
             defaultCurrency: {
               type: "string",
               description:
-                "User's default currency. Applied to all wallets created during onboarding and used when creating wallets without an explicit currency.",
+                "User's default currency. Applied to template wallets and custom wallets without an explicit currency.",
               example: "INR",
               minLength: 3,
               maxLength: 3,
@@ -2288,6 +2318,8 @@ const options = {
         post: {
           tags: ["Onboarding"],
           summary: "Save selected onboarding options",
+          description:
+            "Completes onboarding by copying selected wallet/category templates and/or creating custom wallets and categories in request order. Custom wallet and category objects use the same fields as POST /api/wallets and POST /api/categories.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,

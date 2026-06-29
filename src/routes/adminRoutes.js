@@ -42,6 +42,10 @@ const {
   getSupportSubmission,
   updateSupportSubmission,
 } = require("../controllers/adminSupportController");
+const {
+  getAdminAppSettings,
+  updateAdminAppSettings,
+} = require("../controllers/adminAppSettingsController");
 
 router.post("/login", login);
 router.post("/refresh-token", refreshToken);
@@ -84,5 +88,8 @@ router.patch(
   adminAuthMiddleware,
   updateSupportSubmission,
 );
+
+router.get("/app-settings", adminAuthMiddleware, getAdminAppSettings);
+router.put("/app-settings", adminAuthMiddleware, updateAdminAppSettings);
 
 module.exports = router;

@@ -23,6 +23,7 @@ const { verifyProviderIdToken } = require("../utils/socialAuth");
 const { assertActiveCurrency } = require("../services/exchangeRateService");
 const { buildUserProfilePayload } = require("../utils/userProfile");
 const Wallet = require("../models/Wallet");
+const WalletTransaction = require("../models/WalletTransaction");
 const TransactionCategory = require("../models/TransactionCategory");
 const {
   formatWalletOption,
@@ -72,6 +73,235 @@ const buildTemplateSelectionQuery = ({ objectIds, slugs }) => {
     isDeleted: false,
     ...(filters.length > 0 ? { $or: filters } : { _id: { $in: [] } }),
   };
+};
+
+const parseOpeningAmount = (value, fieldName, { allowNegative = false } = {}) => {
+  if (value === undefined || value === null || value === "") {
+    return { value: 0 };
+  }
+
+  const parsed = Number(value);
+  if (Number.isNaN(parsed) || (!allowNegative && parsed < 0)) {
+    return {
+      error: allowNegative
+        ? `${fieldName} must be a valid number`
+        : `${fieldName} must be a non-negative number`,
+    };
+  }
+
+  return { value: parsed };
+};
+
+const toOrderedWalletEntries = (items) => {
+  const entries = [];
+
+  for (const item of items) {
+    if (typeof item === "string") {
+      entries.push({ kind: "template", value: item });
+      continue;
+    }
+
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    if (item.walletName) {
+      entries.push({ kind: "custom", data: item });
+      continue;
+    }
+
+    const templateRef = item._id || item.id;
+    if (templateRef) {
+      entries.push({ kind: "template", value: templateRef });
+    }
+  }
+
+  return entries;
+};
+
+const toOrderedCategoryEntries = (items) => {
+  const entries = [];
+
+  for (const item of items) {
+    if (typeof item === "string") {
+      entries.push({ kind: "template", value: item });
+      continue;
+    }
+
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const templateRef = item._id || item.id;
+    if (templateRef) {
+      entries.push({ kind: "template", value: templateRef });
+      continue;
+    }
+
+    if (item.name) {
+      entries.push({ kind: "custom", data: item });
+    }
+  }
+
+  return entries;
+};
+
+const buildWalletTemplateMap = (templates) => {
+  const map = new Map();
+
+  for (const template of templates) {
+    map.set(template._id.toString(), template);
+    if (template.slug) {
+      map.set(template.slug.toLowerCase(), template);
+    }
+  }
+
+  return map;
+};
+
+const buildCategoryTemplateMap = (templates) => {
+  const map = new Map();
+
+  for (const template of templates) {
+    map.set(template._id.toString(), template);
+    if (template.slug) {
+      map.set(template.slug.toLowerCase(), template);
+    }
+  }
+
+  return map;
+};
+
+const resolveWalletTemplate = (value, templateMap) => {
+  const key = String(value).trim();
+  if (!key) {
+    return null;
+  }
+
+  if (mongoose.isValidObjectId(key)) {
+    return templateMap.get(key) || null;
+  }
+
+  return templateMap.get(key.toLowerCase()) || null;
+};
+
+const resolveCategoryTemplate = (value, templateMap) => {
+  const key = String(value).trim();
+  if (!key) {
+    return null;
+  }
+
+  if (mongoose.isValidObjectId(key)) {
+    return templateMap.get(key) || null;
+  }
+
+  return templateMap.get(key.toLowerCase()) || null;
+};
+
+const buildCustomWalletSpec = async (data, userId, defaultCurrencyCode) => {
+  const {
+    walletName,
+    color,
+    icon,
+    currency,
+    incomeTotal,
+    expenseTotal,
+    balance,
+  } = data;
+
+  if (!walletName || typeof walletName !== "string" || !walletName.trim()) {
+    return { error: "walletName is required for custom wallets" };
+  }
+
+  let currencyCode = defaultCurrencyCode;
+  if (currency !== undefined && String(currency).trim() !== "") {
+    try {
+      const activeCurrency = await assertActiveCurrency(currency);
+      currencyCode = activeCurrency.code;
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+
+  const parsedIncomeTotal = parseOpeningAmount(incomeTotal, "incomeTotal");
+  if (parsedIncomeTotal.error) {
+    return { error: parsedIncomeTotal.error };
+  }
+
+  const parsedExpenseTotal = parseOpeningAmount(expenseTotal, "expenseTotal");
+  if (parsedExpenseTotal.error) {
+    return { error: parsedExpenseTotal.error };
+  }
+
+  const parsedBalance = parseOpeningAmount(balance, "balance", {
+    allowNegative: true,
+  });
+  if (parsedBalance.error) {
+    return { error: parsedBalance.error };
+  }
+
+  const openingAmount =
+    balance === undefined || balance === null || balance === ""
+      ? parsedIncomeTotal.value - parsedExpenseTotal.value
+      : parsedBalance.value;
+
+  const doc = {
+    userId,
+    isDefault: false,
+    walletName: walletName.trim(),
+    incomeTotal: 0,
+    expenseTotal: 0,
+    balance: 0,
+    currency: currencyCode,
+  };
+
+  if (color !== undefined) {
+    doc.color = String(color).trim();
+  }
+
+  if (icon !== undefined) {
+    doc.icon = String(icon).trim();
+  }
+
+  return { doc, openingAmount };
+};
+
+const buildCustomCategoryDoc = (data, userId, seenNames) => {
+  const { name, color, icon, type } = data;
+
+  if (!name || typeof name !== "string" || !name.trim()) {
+    return { error: "name is required for custom categories" };
+  }
+
+  const trimmed = name.trim();
+  const normalizedName = trimmed.toLowerCase();
+
+  if (seenNames.has(normalizedName)) {
+    return { error: "Category with this name already exists" };
+  }
+
+  if (type !== undefined && !["INCOME", "EXPENSE"].includes(type)) {
+    return { error: "type must be INCOME or EXPENSE" };
+  }
+
+  seenNames.add(normalizedName);
+
+  const doc = {
+    userId,
+    isDefault: false,
+    name: trimmed,
+    type: type || "EXPENSE",
+  };
+
+  if (color !== undefined) {
+    doc.color = String(color).trim();
+  }
+
+  if (icon !== undefined) {
+    doc.icon = String(icon).trim();
+  }
+
+  return { doc };
 };
 
 const normalizeEmail = (email) =>
@@ -526,27 +756,120 @@ const completeOnboarding = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Fetch Wallet Templates
+    | Resolve Wallet And Category Entries
     |--------------------------------------------------------------------------
     */
 
-    const selectedWalletFilters =
-      normalizeOnboardingSelections(selectedWallets);
+    const walletEntries = toOrderedWalletEntries(selectedWallets);
+    const categoryEntries = toOrderedCategoryEntries(selectedCategories);
+
+    const walletTemplateFilters = normalizeOnboardingSelections(
+      walletEntries
+        .filter((entry) => entry.kind === "template")
+        .map((entry) => entry.value),
+    );
     const walletTemplates = await Wallet.find(
-      buildTemplateSelectionQuery(selectedWalletFilters),
+      buildTemplateSelectionQuery(walletTemplateFilters),
     ).session(session);
+    const walletTemplateMap = buildWalletTemplateMap(walletTemplates);
 
-    /*
-    |--------------------------------------------------------------------------
-    | Fetch Category Templates
-    |--------------------------------------------------------------------------
-    */
-
-    const selectedCategoryFilters =
-      normalizeOnboardingSelections(selectedCategories);
+    const categoryTemplateFilters = normalizeOnboardingSelections(
+      categoryEntries
+        .filter((entry) => entry.kind === "template")
+        .map((entry) => entry.value),
+    );
     const categoryTemplates = await TransactionCategory.find(
-      buildTemplateSelectionQuery(selectedCategoryFilters),
+      buildTemplateSelectionQuery(categoryTemplateFilters),
     ).session(session);
+    const categoryTemplateMap = buildCategoryTemplateMap(categoryTemplates);
+
+    const walletSpecs = [];
+
+    for (const entry of walletEntries) {
+      if (entry.kind === "template") {
+        const template = resolveWalletTemplate(entry.value, walletTemplateMap);
+        if (!template) {
+          await session.abortTransaction();
+          return errorResponse(
+            res,
+            `Wallet template not found: ${entry.value}`,
+            400,
+          );
+        }
+
+        walletSpecs.push({
+          doc: {
+            userId,
+            isDefault: false,
+            walletName: template.walletName,
+            slug: template.slug,
+            description: template.description,
+            icon: template.icon,
+            color: template.color,
+            currency: defaultCurrencyCode,
+            sortOrder: template.sortOrder,
+          },
+        });
+        continue;
+      }
+
+      const customWallet = await buildCustomWalletSpec(
+        entry.data,
+        userId,
+        defaultCurrencyCode,
+      );
+      if (customWallet.error) {
+        await session.abortTransaction();
+        return errorResponse(res, customWallet.error, 400);
+      }
+
+      walletSpecs.push(customWallet);
+    }
+
+    const categoryDocs = [];
+    const seenCategoryNames = new Set();
+
+    for (const entry of categoryEntries) {
+      if (entry.kind === "template") {
+        const template = resolveCategoryTemplate(
+          entry.value,
+          categoryTemplateMap,
+        );
+        if (!template) {
+          await session.abortTransaction();
+          return errorResponse(
+            res,
+            `Category template not found: ${entry.value}`,
+            400,
+          );
+        }
+
+        categoryDocs.push({
+          userId,
+          isDefault: false,
+          name: template.name,
+          slug: template.slug,
+          description: template.description,
+          icon: template.icon,
+          color: template.color,
+          sortOrder: template.sortOrder,
+          type: template.type || "EXPENSE",
+        });
+        continue;
+      }
+
+      const customCategory = buildCustomCategoryDoc(
+        entry.data,
+        userId,
+        seenCategoryNames,
+      );
+      if (customCategory.error) {
+        await session.abortTransaction();
+        return errorResponse(res, customCategory.error, 400);
+      }
+
+      categoryDocs.push(customCategory.doc);
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -556,31 +879,41 @@ const completeOnboarding = async (req, res) => {
 
     let createdWallets = [];
 
-    if (walletTemplates.length > 0) {
+    if (walletSpecs.length > 0) {
       createdWallets = await Wallet.insertMany(
-        walletTemplates.map((wallet) => ({
-          userId,
-
-          isDefault: false,
-
-          walletName: wallet.walletName,
-
-          slug: wallet.slug,
-
-          description: wallet.description,
-
-          icon: wallet.icon,
-
-          color: wallet.color,
-
-          currency: defaultCurrencyCode,
-
-          sortOrder: wallet.sortOrder,
-        })),
-        {
-          session,
-        },
+        walletSpecs.map((spec) => spec.doc),
+        { session },
       );
+
+      for (let index = 0; index < createdWallets.length; index += 1) {
+        const openingAmount = walletSpecs[index].openingAmount || 0;
+        if (openingAmount === 0) {
+          continue;
+        }
+
+        const wallet = createdWallets[index];
+        await WalletTransaction.create(
+          [
+            {
+              userId,
+              walletId: wallet._id,
+              categoryId: null,
+              type: openingAmount > 0 ? "INCOME" : "EXPENSE",
+              amount: Math.abs(openingAmount),
+              title: "Opening balance",
+              description: null,
+              transactionDate: new Date(),
+              categorySnapshot: null,
+              walletSnapshot: {
+                walletName: wallet.walletName,
+                walletColor: wallet.color,
+              },
+              createdBy: userId,
+            },
+          ],
+          { session },
+        );
+      }
     }
 
     /*
@@ -591,31 +924,10 @@ const completeOnboarding = async (req, res) => {
 
     let createdCategories = [];
 
-    if (categoryTemplates.length > 0) {
-      createdCategories = await TransactionCategory.insertMany(
-        categoryTemplates.map((category) => ({
-          userId,
-
-          isDefault: false,
-
-          name: category.name,
-
-          slug: category.slug,
-
-          description: category.description,
-
-          icon: category.icon,
-
-          color: category.color,
-
-          sortOrder: category.sortOrder,
-
-          type: category.type || "EXPENSE",
-        })),
-        {
-          session,
-        },
-      );
+    if (categoryDocs.length > 0) {
+      createdCategories = await TransactionCategory.insertMany(categoryDocs, {
+        session,
+      });
     }
 
     /*
